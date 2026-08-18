@@ -1,16 +1,21 @@
 // ============================================================
-// Bing 去广告脚本 (Loon http-response)  v5
+// Bing 去广告脚本 (Loon http-response)  v6
 // 适用：Microsoft Bing App / Bing 页面
 // 功能：
 //   1. HTML 搜索结果页：移除广告容器（class 含 b_ad / ads / ad-slide 等）
 //   2. JSON 搜索 / 信息流 API：递归移除被标记为广告的对象与广告专用数组
 //   3. 文章详情页 viewsfullpage（region:"river"+dataTemplate:"partnerappviews-*"）：
 //      自动清理 cards 数组中 type:"nativead" 占位项（Bing 国区常见的交错广告位）
-//   4. 调试模式：URL 带 ?__debug=1 或请求头 X-Bing-Debug: 1 时，
+//   4. 搜索结果推广卡（Booking.com / 携程 等 "Ad" 标签）：识别 isAd / adType /
+//      Algo:"Ads" / moduleType 含 ad|promo / source 为广告网络 等标记并剔除
+//   5. 调试模式：URL 带 ?__debug=1 或请求头 X-Bing-Debug: 1 时，
 //      在 Loon 日志打印完整响应结构，便于定位新的广告字段
 // 说明：本脚本对静态资源(图片/JS/CSS)直接放行，只处理 HTML / JSON。
 // 自证明：所有处理的响应都会带 X-Loon-AdBlock 响应头，便于抓包验证。
-// v5 变更：每条命中响应打一行 Loon 日志（看脚本是否真在跑的最直接方法）。
+// v6 变更：
+//   - 强化搜索结果推广卡识别（Algo:"Ads" / moduleType / cardType / source 广告网络）
+//   - 新增 HTML 搜索广告容器（b_pag / promo-card / sponsored-card / ad-slot 等）
+//   - 每条命中响应打一行 Loon 日志（含 host，便于确认哪个接口还有广告）
 // ============================================================
 
 (function () {
@@ -39,12 +44,15 @@
   // 文章详情页（pageId=sapphireviews = 国区 Bing 文章页）—— cards 列表里 nativead 与 article 交错
   const isArticleDetail = /assets\.msn\.com\/service\/news\/feed\/pages\/viewsfullpage/i.test(url);
 
+  // 搜索结果页（bing.com / cn.bing.com 的 search / sapphire 接口）
+  const isSearch = /bing\.com/i.test(url) && /(search|sapphire|api\/v1|results|query)/i.test(url);
+
   let removed = 0;
   try {
     if (isHTML) {
       body = stripHtmlAds(body);
     } else {
-      const r = stripJsonAds(body, isNewsFeed);
+      const r = stripJsonAds(body, isNewsFeed, isSearch);
       body = r.body;
       removed = r.removed;
     }
@@ -60,19 +68,21 @@
 
   // 自证明响应头：只要本脚本真的跑过这条响应，就会带上 X-Loon-AdBlock。
   // 下次抓包只要看到这个头，就能确认插件已生效；removed=0 说明本响应无广告。
-  // （仅对我们会处理的 html/json 响应打标，静态资源已在上方直接放行、不会到这）
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    ';v=5' +
+    ';v=6' +
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
+    (isSearch ? ';search=1' : '') +
     (isHTML ? ';html=1' : '');
 
-  // v5: 每条命中响应都打一行 Loon 日志，便于确认脚本真在跑
+  // v6: 每条命中响应都打一行 Loon 日志（含 host），便于确认脚本真在跑、哪个接口还有广告
   try {
-    console.log('[Bing去广告] v5 OK url=' + url.slice(0, 120) + ' ct=' + ct.slice(0, 30) +
-      ' removed=' + (typeof removed !== 'undefined' ? removed : 0));
+    const m = url.match(/^https?:\/\/([^\/]+)/i);
+    const host = m ? m[1] : '?';
+    console.log('[Bing去广告] v6 OK host=' + host + ' removed=' +
+      (typeof removed !== 'undefined' ? removed : 0) + ' url=' + url.slice(0, 100));
   } catch (e) {}
 
   $done({ headers: outHeaders, body: body });
@@ -100,11 +110,13 @@ function stripHtmlAds(html) {
     // 搜索推广结果（Bing 经典标记 b_ad）
     /<li[^>]*class="[^"]*\bb_ad\b[^"]*"[\s\S]*?<\/li>/gi,
     // 通用广告容器
-    /<div[^>]*class="[^"]*\b(b_ad|ads|ad_block|ad-slide|adUnit|ads-feed|ads-container)\b[^"]*"[\s\S]*?<\/div>/gi,
+    /<div[^>]*class="[^"]*\b(b_ad|ads|ad_block|ad-slide|adUnit|ads-feed|ads-container|ad-slot|promo-card|sponsored-card|tile--ad|b_pag)\b[^"]*"[\s\S]*?<\/div>/gi,
     // 推广 section
     /<section[^>]*class="[^"]*\b(ad|ads|promoted)\b[^"]*"[\s\S]*?<\/section>/gi,
     // 带 aad 标记的容器
     /<[^>]*data-aad[^>]*>[\s\S]*?<\/(?:div|li|section)>/gi,
+    // 带 Ad 标签的卡片（Booking.com 等 “Ad” 角标常包在带 ad 类的容器里）
+    /<[^>]*(class|data-[a-z]*)="[^"]*\b(adLabel|ad-label|ad_card|adCard|adtile)\b[^"]*"[^>]*>[\s\S]*?<\/(?:div|li|section|article)>/gi,
   ];
 
   let out = html;
@@ -126,7 +138,7 @@ function stripHtmlAds(html) {
 //   isNewsFeed=true 时，额外剔除文章/信息流里的 recoDoc 推广卡
 //   （webcontent=第三方一点资讯植入；slideshow(placement:River)=微软推荐位）
 // ------------------------------------------------------------
-function stripJsonAds(text, isNewsFeed) {
+function stripJsonAds(text, isNewsFeed, isSearch) {
   let data;
   try {
     data = JSON.parse(text);
@@ -150,10 +162,15 @@ function stripJsonAds(text, isNewsFeed) {
     'clickUrl', 'clickThroughUrl', 'landingUrl', 'adRef', 'adsServed',
     'wpoNativeAdServed', 'bannerImpressionOffer', 'limitedTimeOffer',
     'limitedTimeOfferBanner', 'brandId', 'offerId', 'rewardName',
+    // v6 新增：搜索结果推广卡常见标记
+    'adUnit', 'adTile', 'isPaid', 'paidPlacement', 'promotedContent',
+    'sponsoredResults', 'marketingContent', 'commercialContent', 'isCommercial',
+    'adInfo', 'adData', 'adAttributes', 'Algo', 'moduleType', 'cardType',
+    'template', 'source', 'placement', 'dataSource', 'provider',
   ];
 
   // 已知广告专用数组字段（整组清空）
-  const adArrays = /^(ads|advertisements|promotions|promotedList|sponsoredResults|adResults|adItems|nativeAds)$/i;
+  const adArrays = /^(ads|advertisements|promotions|promotedList|sponsoredResults|adResults|adItems|nativeAds|adTiles)$/i;
 
   let removed = 0;
 
@@ -165,6 +182,23 @@ function stripJsonAds(text, isNewsFeed) {
       const t = o.type.toLowerCase();
       if (t === 'nativead' || t === 'ad' || t === 'sponsored' ||
           t === 'promoted' || /nativead|sponsor|promoted/.test(t)) {
+        return true;
+      }
+    }
+
+    // 1b) v6：Algo / moduleType / cardType / template 等“广告位”标记
+    const posMarkers = ['Algo', 'moduleType', 'cardType', 'template', 'placement', 'dataSource'];
+    for (let i = 0; i < posMarkers.length; i++) {
+      const v = o[posMarkers[i]];
+      if (typeof v === 'string' && /(^|\b)(ad|ads|promo|sponsor|advert|commercial|marketing)(\b|$)/i.test(v)) {
+        return true;
+      }
+    }
+
+    // 1c) v6：source / provider 为广告网络域名（Booking、携程、Taboola、Outbrain 等第三方推广）
+    if (typeof o.source === 'string' || typeof o.provider === 'string' || typeof o.dataSource === 'string') {
+      const s = (o.source || o.provider || o.dataSource || '').toLowerCase();
+      if (/booking|ctrip|trip\.com|taboola|outbrain|criteo|pubmatic|doubleclick|adsystem|adnxs|advertiser|yidianzixun|go2yd|appinstall/i.test(s)) {
         return true;
       }
     }
