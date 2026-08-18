@@ -21,8 +21,10 @@
 **推荐：commit 固定地址（不走 CDN 缓存，永远拿到确切版本）**
 
 ```
-https://cdn.jsdelivr.net/gh/aoconch/bing-ad-blocker-loon@1a8b658/Bing-AD-Blocker.plugin
+https://cdn.jsdelivr.net/gh/aoconch/bing-ad-blocker-loon@4d3ebcb/Bing-AD-Blocker.plugin
 ```
+
+（v7 — 修复搜索页"为你精选更多内容"区里 Booking.com 等带"Ad"角标的卡片漏删）
 
 Loon 操作：配置 → 插件 → `+` → 通过 URL 添加 → 粘贴上面地址 → 启用。
 若之前装过旧版，先左滑删除旧插件再添加（Loon 插件缓存按 URL 区分，新 URL = 重新拉取）。
@@ -66,12 +68,12 @@ Loon 操作：配置 → 插件 → `+` → 通过 URL 添加 → 粘贴上面�
 
 Loon 的插件缓存与 URL 一一对应。换一个新的 URL 即可让 Loon 当作新插件重拉——最简单的办法就是用 commit 固定地址（见上文"安装"），每次更新换哈希。
 
-#### B. 自查 v6 标志
+#### B. 自查 v7 标志
 
-新版响应头应包含 `X-Loon-AdBlock: ...;v=6`；
-新版 Loon 日志应包含 `[Bing去广告] v6 OK url=... removed=N`。
+新版响应头应包含 `X-Loon-AdBlock: ...;v=7`；
+新版 Loon 日志应包含 `[Bing去广告] v7 OK host=... removed=N`。
 
-如果响应头是 `v=4`/`v=5` 或无版本号 → 插件是旧版，重新做 A。
+如果响应头是 `v=4`/`v=5`/`v=6` 或无版本号 → 插件是旧版，重新做 A。
 
 #### C. 确认脚本在跑但版本不对
 
