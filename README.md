@@ -45,3 +45,27 @@ bash deploy.sh          # 自动建仓库、推送、输出 Loon 导入地址
 ## 调试
 
 在 Bing App 请求 URL 后加 `?__debug=1`，Loon 日志会打印响应结构，便于发现新的广告字段。
+
+## 故障排查
+
+### 症状：插件显示"已加载"但仍然有广告
+X-Loon-AdBlock 响应头 = 0 出现。99% 是 **Loon 缓存了旧 plugin** 或 **jsDelivr 缓存了旧脚本**。
+
+#### A. 强制刷新插件（推荐）
+
+Loon 的插件缓存与 URL 一一对应。换一个新的 URL 即可让 Loon 当作新插件重拉：
+
+```
+https://cdn.jsdelivr.net/gh/aoconch/bing-ad-blocker-loon@<COMMIT_SHA>/Bing-AD-Blocker.plugin
+```
+
+把 `<COMMIT_SHA>` 换成最新 7 位 commit 哈希（永远会得到带最新 `?v=N` cache-bust 的 plugin）。
+
+Loon 操作：左滑旧 plugin → 删除 → `+` → 通过 URL 添加 → 粘贴上面 URL → 启用。
+
+#### B. 自查 v5 标志
+
+新版响应头应包含 `X-Loon-AdBlock: ...;v=5`；
+新版 Loon 日志应包含 `[Bing去广告] v5 OK url=... removed=N`。
+
+如果响应头是 `v=4` 或无 → 插件是旧版，重新做 A。
