@@ -27,12 +27,20 @@ bash deploy.sh          # 自动建仓库、推送、输出 Loon 导入地址
 
 1. 把本仓库推到 GitHub（任意公开仓库）。
 2. 编辑 `Bing-AD-Blocker.plugin`，把两处 `YOUR_GITHUB_USER` 换成你的用户名。
-3. Loon → 配置 → 插件 → `+` → 通过 URL 添加：
-   `https://raw.githubusercontent.com/<你>/<仓库>/main/Bing-AD-Blocker.plugin`
+3. Loon → 配置 → 插件 → `+` → 通过 URL 添加（**建议用 jsDelivr，国内更稳**）：
+   `https://cdn.jsdelivr.net/gh/<你>/<仓库>@main/Bing-AD-Blocker.plugin`
+   备用 raw 地址：`https://raw.githubusercontent.com/<你>/<仓库>/main/Bing-AD-Blocker.plugin`
 4. Loon → 工具 → MitM 开启（主机名已含 `assets.msn.com` 等）→ 安装并信任证书。
 5. 打开 Bing App，广告应已消失。
 
 > 若只想要域名拦截、不想托管脚本：删掉 `.plugin` 里的 `[Script]` 整段即可，`[Rule]` 已能拦掉竞价广告与追踪。
+
+## 怎么确认插件真的生效了
+
+脚本会给每条被处理的响应打上响应头 **`X-Loon-AdBlock: removed=N`**（N=本响应移除的广告条目数）。
+- 下次抓包 / 看 Loon 日志，只要出现这个头，就说明插件脚本确实跑起来了；
+- `removed=0` 表示这条响应本就没有广告。
+- 如果**完全看不到** `X-Loon-AdBlock` 头，说明插件没加载（检查导入 URL 是否正确、是否被墙、是否启用）。
 
 ## 调试
 
