@@ -1,12 +1,15 @@
 // ============================================================
-// Bing 去广告脚本 (Loon http-response)
+// Bing 去广告脚本 (Loon http-response)  v4
 // 适用：Microsoft Bing App / Bing 页面
 // 功能：
 //   1. HTML 搜索结果页：移除广告容器（class 含 b_ad / ads / ad-slide 等）
 //   2. JSON 搜索 / 信息流 API：递归移除被标记为广告的对象与广告专用数组
-//   3. 调试模式：URL 带 ?__debug=1 或请求头 X-Bing-Debug: 1 时，
+//   3. 文章详情页 viewsfullpage（region:"river"+dataTemplate:"partnerappviews-*"）：
+//      自动清理 cards 数组中 type:"nativead" 占位项（Bing 国区常见的交错广告位）
+//   4. 调试模式：URL 带 ?__debug=1 或请求头 X-Bing-Debug: 1 时，
 //      在 Loon 日志打印完整响应结构，便于定位新的广告字段
 // 说明：本脚本对静态资源(图片/JS/CSS)直接放行，只处理 HTML / JSON。
+// 自证明：所有处理的响应都会带 X-Loon-AdBlock 响应头，便于抓包验证。
 // ============================================================
 
 (function () {
@@ -31,6 +34,9 @@
 
   // 文章 / 信息流接口（assets.msn.com 的 news feed）：需额外剔除 recoDoc 推广卡
   const isNewsFeed = /assets\.msn\.com\/service\/news\/feed\//i.test(url);
+
+  // 文章详情页（pageId=sapphireviews = 国区 Bing 文章页）—— cards 列表里 nativead 与 article 交错
+  const isArticleDetail = /assets\.msn\.com\/service\/news\/feed\/pages\/viewsfullpage/i.test(url);
 
   let removed = 0;
   try {
@@ -57,7 +63,10 @@
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    (isNewsFeed ? ';feed=1' : '') + (isHTML ? ';html=1' : '');
+    ';v=4' +
+    (isNewsFeed ? ';feed=1' : '') +
+    (isArticleDetail ? ';articleDetail=1' : '') +
+    (isHTML ? ';html=1' : '');
 
   $done({ headers: outHeaders, body: body });
 })();
