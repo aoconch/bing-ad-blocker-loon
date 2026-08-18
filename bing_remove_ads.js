@@ -1,5 +1,5 @@
 // ============================================================
-// Bing 去广告脚本 (Loon http-response)  v4
+// Bing 去广告脚本 (Loon http-response)  v5
 // 适用：Microsoft Bing App / Bing 页面
 // 功能：
 //   1. HTML 搜索结果页：移除广告容器（class 含 b_ad / ads / ad-slide 等）
@@ -10,6 +10,7 @@
 //      在 Loon 日志打印完整响应结构，便于定位新的广告字段
 // 说明：本脚本对静态资源(图片/JS/CSS)直接放行，只处理 HTML / JSON。
 // 自证明：所有处理的响应都会带 X-Loon-AdBlock 响应头，便于抓包验证。
+// v5 变更：每条命中响应打一行 Loon 日志（看脚本是否真在跑的最直接方法）。
 // ============================================================
 
 (function () {
@@ -63,10 +64,16 @@
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    ';v=4' +
+    ';v=5' +
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
     (isHTML ? ';html=1' : '');
+
+  // v5: 每条命中响应都打一行 Loon 日志，便于确认脚本真在跑
+  try {
+    console.log('[Bing去广告] v5 OK url=' + url.slice(0, 120) + ' ct=' + ct.slice(0, 30) +
+      ' removed=' + (typeof removed !== 'undefined' ? removed : 0));
+  } catch (e) {}
 
   $done({ headers: outHeaders, body: body });
 })();
