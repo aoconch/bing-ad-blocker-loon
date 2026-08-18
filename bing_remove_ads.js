@@ -29,11 +29,14 @@
 
   const isHTML = /text\/html/i.test(ct);
 
+  // 文章 / 信息流接口（assets.msn.com 的 news feed）：需额外剔除 recoDoc 推广卡
+  const isNewsFeed = /assets\.msn\.com\/service\/news\/feed\//i.test(url);
+
   try {
     if (isHTML) {
       body = stripHtmlAds(body);
     } else {
-      body = stripJsonAds(body);
+      body = stripJsonAds(body, isNewsFeed);
     }
   } catch (e) {
     console.log('[Bing去广告] 解析异常: ' + (e && e.message ? e.message : e));
@@ -93,14 +96,19 @@ function stripHtmlAds(html) {
 
 // ------------------------------------------------------------
 // JSON：递归移除广告对象与广告数组
+//   isNewsFeed=true 时，额外剔除文章/信息流里的 recoDoc 推广卡
+//   （webcontent=第三方一点资讯植入；slideshow(placement:River)=微软推荐位）
 // ------------------------------------------------------------
-function stripJsonAds(text) {
+function stripJsonAds(text, isNewsFeed) {
   let data;
   try {
     data = JSON.parse(text);
   } catch (e) {
     return text;
   }
+
+  // 是否剔除 slideshow(River) 推荐位卡片（默认开；若只想删第三方植入、保留编辑相关推荐，改为 false）
+  const BLOCK_SLIDESHOW_RIVER = true;
 
   // 常见广告标记字段（命中其一即视为广告对象）
   // 下列字段均来自真实设备抓包：
@@ -161,11 +169,36 @@ function stripJsonAds(text) {
     return false;
   }
 
+  // 文章/信息流里的 recoDoc 推广卡（非原生广告，但属于植入推荐）
+  function isPromoModule(o) {
+    if (!o || typeof o !== 'object') return false;
+    const t = (o.type || '').toLowerCase();
+
+    // 1) 第三方注入内容（一点资讯 / yidianzixun 等）—— 明确推广
+    if (t === 'webcontent') return true;
+
+    // 2) 推荐/广告位轮播（River 为微软推荐位）
+    if (t === 'slideshow' && BLOCK_SLIDESHOW_RIVER && /river/i.test(o.placement || '')) return true;
+
+    // 3) 带 recoDocMetadata 且跳转到第三方域名
+    //    注意：Bing 国区文章链接是 www.msn.cn（.cn 后缀），与 msn.com 同为微软一手域名，
+    //    白名单必须同时覆盖 .com / .cn，否则会把所有正常文章误删。
+    if (o.recoDocMetadata) {
+      const u = o.url || o.targetUrl || o.clickUrl || '';
+      const m = u.match(/^https?:\/\/([^/]+)/i);
+      if (m) {
+        const h = m[1].toLowerCase();
+        if (h && !/(^|\.)(msn|bing|microsoft)\.(com|cn)$/.test(h)) return true;
+      }
+    }
+    return false;
+  }
+
   function clean(node) {
     if (Array.isArray(node)) {
       for (let i = node.length - 1; i >= 0; i--) {
         const item = node[i];
-        if (isAdObject(item)) {
+        if (isAdObject(item) || (isNewsFeed && isPromoModule(item))) {
           node.splice(i, 1);
           removed++;
           continue;

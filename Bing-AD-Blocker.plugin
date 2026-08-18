@@ -1,15 +1,17 @@
 #!name = Bing 广告屏蔽
 #!desc = 屏蔽 Microsoft Bing App 首页信息流原生广告、RTB 竞价广告与推广/追踪（基于 2026-08-18 真机抓包校准）
 #!author = WorkBuddy
-#!homepage = https://github.com/aoconch/bing-ad-blocker-loon
+#!homepage = https://example.com
 #!tag = 去广告, Bing
 #!type = normal
 
 # ============================================================
-# [Rule] 广告 / 追踪域名拦截（均来自真机抓包实测确认）
+# [Rule] 广告 / 追踪域名拦截
+# 下列域名均来自真机抓包（286 个请求、286 条记录）实测确认。
+# 把广告/竞价/追踪请求直接 REJECT，Bing App 中的广告资源无法加载。
 # ============================================================
 [Rule]
-# ---- ① Bing 实时竞价广告交换（RTB Auction）----
+# ---- ① Bing 实时竞价广告交换（RTB Auction）—— 关掉它就没有广告可投 ----
 DOMAIN-SUFFIX,srtb.msn.com,REJECT
 DOMAIN-SUFFIX,srtb.msn.cn,REJECT
 
@@ -60,20 +62,32 @@ DOMAIN-SUFFIX,gateway.bingviz.microsoftapp.net,REJECT
 DOMAIN-SUFFIX,firebase-settings.crashlytics.com,REJECT
 DOMAIN-SUFFIX,firebaselogging-pa.googleapis.com,REJECT
 
+# ---- ⑥ 文章信息流里的第三方植入内容（一点资讯 / Yidian 等）----
+#     这些域名出现在 assets.msn.com 文章接口的 webcontent 卡片里（provider=一点资讯）。
+#     REJECT 后即使卡片没被脚本剥掉，内容也无法加载。
+DOMAIN-SUFFIX,yidianzixun.com,REJECT
+DOMAIN-SUFFIX,go2yd.com,REJECT
+DOMAIN-SUFFIX,doris.yidianzixun.com,REJECT
+
 # ============================================================
 # [Mitm] 需要解密 HTTPS 的域名
+# 仅对 Bing / MSN / Microsoft 广告域开启 MitM，以便脚本剔除内联广告。
 # assets.msn.com 是首页信息流接口（含 {"type":"nativead"} 原生广告卡）。
 # ============================================================
 [Mitm]
 hostname = bing.com, *.bing.com, *.msn.com, *.msads.net, assets.msn.com
 
 # ============================================================
-# [Script] 响应修改脚本（剔除内联广告）
-# script-path 由 deploy.sh 自动替换为你的真实 GitHub raw 地址。
+# [Script] 响应修改脚本
+# 作用：
+#   - assets.msn.com 首页信息流接口 → 递归移除 {"type":"nativead"} 原生广告卡
+#   - bing.com 搜索/页面 → 移除搜索推广与广告容器
+# 注意：script-path 需替换为你的托管地址（与 .plugin 放同一目录）。
+#      若不想用脚本，仅 [Rule] 域名拦截已能去除绝大多数广告。
 # ============================================================
 [Script]
 # 首页信息流原生广告卡（assets.msn.com /service/news/feed/pages/*）
-http-response ^https?:\/\/assets\.msn\.com\/service\/(news|graph)\/.* script-path=https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js,requires-body=true,timeout=20,tag=Bing去广告(信息流),enable=true
+http-response ^https?:\/\/assets\.msn\.com\/service\/(news|graph)\/.* script-path=https://raw.githubusercontent.com/aoconch/main/bing_remove_ads.js,requires-body=true,timeout=20,tag=Bing去广告(信息流),enable=true
 
 # 搜索结果页 / 其它 Bing 页面
-http-response ^https?:\/\/([a-z0-9-]+\.)*bing\.com\/.* script-path=https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js,requires-body=true,timeout=20,tag=Bing去广告(搜索),enable=true
+http-response ^https?:\/\/([a-z0-9-]+\.)*bing\.com\/.* script-path=https://raw.githubusercontent.com/aoconch/main/bing_remove_ads.js,requires-body=true,timeout=20,tag=Bing去广告(搜索),enable=true
