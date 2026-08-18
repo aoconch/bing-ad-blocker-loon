@@ -1,0 +1,79 @@
+#!name = Bing 广告屏蔽
+#!desc = 屏蔽 Microsoft Bing App 首页信息流原生广告、RTB 竞价广告与推广/追踪（基于 2026-08-18 真机抓包校准）
+#!author = WorkBuddy
+#!homepage = https://github.com/aoconch/bing-ad-blocker-loon
+#!tag = 去广告, Bing
+#!type = normal
+
+# ============================================================
+# [Rule] 广告 / 追踪域名拦截（均来自真机抓包实测确认）
+# ============================================================
+[Rule]
+# ---- ① Bing 实时竞价广告交换（RTB Auction）----
+DOMAIN-SUFFIX,srtb.msn.com,REJECT
+DOMAIN-SUFFIX,srtb.msn.cn,REJECT
+
+# ---- ② Microsoft 自有广告域 ----
+DOMAIN-SUFFIX,msads.net,REJECT
+DOMAIN-SUFFIX,ads.msn.com,REJECT
+DOMAIN-SUFFIX,bingads.microsoft.com,REJECT
+DOMAIN-SUFFIX,ads1.msads.net,REJECT
+DOMAIN-SUFFIX,ads2.msads.net,REJECT
+
+# ---- ③ 推广/奖励平台（含 promotions / limitedTimeOffer / brandId 卡片）----
+#     说明：REJECT 后会同时去掉首页"奖励/优惠"推广卡；若你仍想保留 Bing 奖励，
+#           把下面这行注释掉（前面加 #）即可，广告仍会被 [Script] 的内联剥离处理。
+DOMAIN-SUFFIX,prod.rewardsplatform.microsoft.com,REJECT
+
+# ---- ④ 第三方广告/追踪联盟（覆盖大多数通用广告）----
+DOMAIN-SUFFIX,doubleclick.net,REJECT
+DOMAIN-SUFFIX,googlesyndication.com,REJECT
+DOMAIN-SUFFIX,googleadservices.com,REJECT
+DOMAIN-SUFFIX,adservice.google.com,REJECT
+DOMAIN-SUFFIX,adnxs.com,REJECT
+DOMAIN-SUFFIX,rubiconproject.com,REJECT
+DOMAIN-SUFFIX,pubmatic.com,REJECT
+DOMAIN-SUFFIX,criteo.com,REJECT
+DOMAIN-SUFFIX,criteo.net,REJECT
+DOMAIN-SUFFIX,moatads.com,REJECT
+DOMAIN-SUFFIX,spotx.tv,REJECT
+DOMAIN-SUFFIX,openx.net,REJECT
+DOMAIN-SUFFIX,scorecardresearch.com,REJECT
+DOMAIN-SUFFIX,taboola.com,REJECT
+DOMAIN-SUFFIX,outbrain.com,REJECT
+DOMAIN-SUFFIX,adform.net,REJECT
+DOMAIN-SUFFIX,adroll.com,REJECT
+DOMAIN-SUFFIX,advertising.com,REJECT
+DOMAIN-SUFFIX,adtechus.com,REJECT
+DOMAIN-SUFFIX,adsrvr.org,REJECT
+DOMAIN-SUFFIX,bounceexchange.com,REJECT
+DOMAIN-SUFFIX,rfihub.com,REJECT
+DOMAIN-SUFFIX,crwdcntrl.net,REJECT
+DOMAIN-SUFFIX,adsystem.com,REJECT
+DOMAIN-SUFFIX,adservice.com,REJECT
+
+# ---- ⑤ 行为/归因追踪（不影响广告显示，仅停止数据上报）----
+DOMAIN-SUFFIX,analytics.adjust.io,REJECT
+DOMAIN-SUFFIX,analytics.adjust.com,REJECT
+DOMAIN-SUFFIX,self.events.data.microsoft.com,REJECT
+DOMAIN-SUFFIX,gateway.bingviz.microsoftapp.net,REJECT
+DOMAIN-SUFFIX,firebase-settings.crashlytics.com,REJECT
+DOMAIN-SUFFIX,firebaselogging-pa.googleapis.com,REJECT
+
+# ============================================================
+# [Mitm] 需要解密 HTTPS 的域名
+# assets.msn.com 是首页信息流接口（含 {"type":"nativead"} 原生广告卡）。
+# ============================================================
+[Mitm]
+hostname = bing.com, *.bing.com, *.msn.com, *.msads.net, assets.msn.com
+
+# ============================================================
+# [Script] 响应修改脚本（剔除内联广告）
+# script-path 由 deploy.sh 自动替换为你的真实 GitHub raw 地址。
+# ============================================================
+[Script]
+# 首页信息流原生广告卡（assets.msn.com /service/news/feed/pages/*）
+http-response ^https?:\/\/assets\.msn\.com\/service\/(news|graph)\/.* script-path=https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js,requires-body=true,timeout=20,tag=Bing去广告(信息流),enable=true
+
+# 搜索结果页 / 其它 Bing 页面
+http-response ^https?:\/\/([a-z0-9-]+\.)*bing\.com\/.* script-path=https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js,requires-body=true,timeout=20,tag=Bing去广告(搜索),enable=true
