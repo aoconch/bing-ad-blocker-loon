@@ -32,11 +32,14 @@
   // 文章 / 信息流接口（assets.msn.com 的 news feed）：需额外剔除 recoDoc 推广卡
   const isNewsFeed = /assets\.msn\.com\/service\/news\/feed\//i.test(url);
 
+  let removed = 0;
   try {
     if (isHTML) {
       body = stripHtmlAds(body);
     } else {
-      body = stripJsonAds(body, isNewsFeed);
+      const r = stripJsonAds(body, isNewsFeed);
+      body = r.body;
+      removed = r.removed;
     }
   } catch (e) {
     console.log('[Bing去广告] 解析异常: ' + (e && e.message ? e.message : e));
@@ -48,7 +51,15 @@
     console.log('[Bing去广告][DEBUG] body(前2000)=' + String(body).slice(0, 2000));
   }
 
-  $done({ body: body });
+  // 自证明响应头：只要本脚本真的跑过这条响应，就会带上 X-Loon-AdBlock。
+  // 下次抓包只要看到这个头，就能确认插件已生效；removed=0 说明本响应无广告。
+  // （仅对我们会处理的 html/json 响应打标，静态资源已在上方直接放行、不会到这）
+  const outHeaders = {};
+  for (const k in respHeaders) outHeaders[k] = respHeaders[k];
+  outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
+    (isNewsFeed ? ';feed=1' : '') + (isHTML ? ';html=1' : '');
+
+  $done({ headers: outHeaders, body: body });
 })();
 
 // ------------------------------------------------------------
@@ -220,5 +231,5 @@ function stripJsonAds(text, isNewsFeed) {
 
   clean(data);
   console.log('[Bing去广告] 已移除广告条目数=' + removed);
-  return JSON.stringify(data);
+  return { body: JSON.stringify(data), removed: removed };
 }
