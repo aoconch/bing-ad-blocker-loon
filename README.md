@@ -16,22 +16,32 @@
 - `Bing-AD-Blocker.plugin` — Loon 插件（含 `[Rule]`/`[Mitm]`/`[Script]`）
 - `bing_remove_ads.js` — MITM 响应脚本：递归移除 `nativead` 原生广告卡与广告字段
 
-## 部署（一键）
+## 安装（Loon 一键导入）
 
-```bash
-gh auth login          # 首次：浏览器授权
-bash deploy.sh          # 自动建仓库、推送、输出 Loon 导入地址
+**推荐：commit 固定地址（不走 CDN 缓存，永远拿到确切版本）**
+
+```
+https://cdn.jsdelivr.net/gh/aoconch/bing-ad-blocker-loon@1a8b658/Bing-AD-Blocker.plugin
 ```
 
-## 手动部署
+Loon 操作：配置 → 插件 → `+` → 通过 URL 添加 → 粘贴上面地址 → 启用。
+若之前装过旧版，先左滑删除旧插件再添加（Loon 插件缓存按 URL 区分，新 URL = 重新拉取）。
+
+之后每次插件更新，把 URL 中的 `@1a8b658` 换成最新 commit 短哈希即可强制刷新。
+
+备用地址（raw.githubusercontent，需要代理可直连 GitHub）：
+`https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/Bing-AD-Blocker.plugin`
+
+> ⚠️ 不要用 `@main` 的 jsDelivr 地址：jsDelivr 对 `@main` 有约 45 分钟的更新节流，且 purge 也会被限流，会出现"仓库已更新但手机还跑旧脚本"的假象。
+
+安装后：Loon → 工具 → MitM 开启（主机名已含 `assets.msn.com` 等）→ 安装并信任证书 → 打开 Bing App。
+
+## 手动部署到自己的仓库
 
 1. 把本仓库推到 GitHub（任意公开仓库）。
-2. 编辑 `Bing-AD-Blocker.plugin`，把两处 `YOUR_GITHUB_USER` 换成你的用户名。
-3. Loon → 配置 → 插件 → `+` → 通过 URL 添加（**建议用 jsDelivr，国内更稳**）：
-   `https://cdn.jsdelivr.net/gh/<你>/<仓库>@main/Bing-AD-Blocker.plugin`
-   备用 raw 地址：`https://raw.githubusercontent.com/<你>/<仓库>/main/Bing-AD-Blocker.plugin`
-4. Loon → 工具 → MitM 开启（主机名已含 `assets.msn.com` 等）→ 安装并信任证书。
-5. 打开 Bing App，广告应已消失。
+2. 编辑 `Bing-AD-Blocker.plugin`，把 `script-path` 换成你自己的脚本地址（建议同样用 raw.githubusercontent）。
+3. Loon 通过 URL 添加：`https://cdn.jsdelivr.net/gh/<你>/<仓库>@<COMMIT_SHA>/Bing-AD-Blocker.plugin`
+4. 同上开启 MitM 并信任证书。
 
 > 若只想要域名拦截、不想托管脚本：删掉 `.plugin` 里的 `[Script]` 整段即可，`[Rule]` 已能拦掉竞价广告与追踪。
 
@@ -49,23 +59,20 @@ bash deploy.sh          # 自动建仓库、推送、输出 Loon 导入地址
 ## 故障排查
 
 ### 症状：插件显示"已加载"但仍然有广告
-X-Loon-AdBlock 响应头 = 0 出现。99% 是 **Loon 缓存了旧 plugin** 或 **jsDelivr 缓存了旧脚本**。
+
+99% 是 **Loon 缓存了旧 plugin** 或 **CDN 缓存了旧脚本**。表现：`X-Loon-AdBlock` 头里是 `v=4`/`v=5` 而不是 `v=6`。
 
 #### A. 强制刷新插件（推荐）
 
-Loon 的插件缓存与 URL 一一对应。换一个新的 URL 即可让 Loon 当作新插件重拉：
+Loon 的插件缓存与 URL 一一对应。换一个新的 URL 即可让 Loon 当作新插件重拉——最简单的办法就是用 commit 固定地址（见上文"安装"），每次更新换哈希。
 
-```
-https://cdn.jsdelivr.net/gh/aoconch/bing-ad-blocker-loon@<COMMIT_SHA>/Bing-AD-Blocker.plugin
-```
+#### B. 自查 v6 标志
 
-把 `<COMMIT_SHA>` 换成最新 7 位 commit 哈希（永远会得到带最新 `?v=N` cache-bust 的 plugin）。
+新版响应头应包含 `X-Loon-AdBlock: ...;v=6`；
+新版 Loon 日志应包含 `[Bing去广告] v6 OK url=... removed=N`。
 
-Loon 操作：左滑旧 plugin → 删除 → `+` → 通过 URL 添加 → 粘贴上面 URL → 启用。
+如果响应头是 `v=4`/`v=5` 或无版本号 → 插件是旧版，重新做 A。
 
-#### B. 自查 v5 标志
+#### C. 确认脚本在跑但版本不对
 
-新版响应头应包含 `X-Loon-AdBlock: ...;v=5`；
-新版 Loon 日志应包含 `[Bing去广告] v5 OK url=... removed=N`。
-
-如果响应头是 `v=4` 或无 → 插件是旧版，重新做 A。
+Loon 日志出现 `Finished execute http-response script:Bing去广告` 说明脚本在执行；此时若还有广告，看日志里打印的版本号即可判断是缓存问题还是规则漏判。
