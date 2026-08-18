@@ -35,8 +35,11 @@ if [[ -z "$USER" ]]; then
 fi
 echo "    用户名 = $USER"
 
-echo "[*] 用真实用户名替换插件里的占位符 ..."
-sed -i.bak "s/YOUR_GITHUB_USER/$USER/g" "$PLUGIN"
+echo "[*] 用真实用户名+仓库名替换插件里的占位符 ..."
+# 兼容两种模板写法：
+#   ① raw.githubusercontent.com/YOUR_GITHUB_USER/main/...   → 旧写法（漏仓库名，已纠正）
+#   ② raw.githubusercontent.com/YOUR_GITHUB_USER/bing-ad-blocker-loon/main/...  → 规范写法
+sed -i.bak -e "s#YOUR_GITHUB_USER/main#$USER/$REPO/main#g" -e "s#YOUR_GITHUB_USER#$USER#g" "$PLUGIN"
 rm -f "$PLUGIN.bak"
 
 echo "[*] 创建公开仓库 $USER/$REPO ..."

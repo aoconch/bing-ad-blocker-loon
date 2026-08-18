@@ -87,7 +87,7 @@ hostname = bing.com, *.bing.com, *.msn.com, *.msads.net, assets.msn.com
 # ============================================================
 [Script]
 # 首页信息流原生广告卡（assets.msn.com /service/news/feed/pages/*）
-http-response ^https?:\/\/assets\.msn\.com\/service\/(news|graph)\/.* script-path=https://raw.githubusercontent.com/aoconch/main/bing_remove_ads.js,requires-body=true,timeout=20,tag=Bing去广告(信息流),enable=true
+http-response ^https?:\/\/assets\.msn\.com\/service\/(news|graph)\/.* script-path=https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js,requires-body=true,timeout=20,tag=Bing去广告(信息流),enable=true
 
 # 搜索结果页 / 其它 Bing 页面
-http-response ^https?:\/\/([a-z0-9-]+\.)*bing\.com\/.* script-path=https://raw.githubusercontent.com/aoconch/main/bing_remove_ads.js,requires-body=true,timeout=20,tag=Bing去广告(搜索),enable=true
+http-response ^https?:\/\/([a-z0-9-]+\.)*bing\.com\/.* script-path=https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js,requires-body=true,timeout=20,tag=Bing去广告(搜索),enable=true
