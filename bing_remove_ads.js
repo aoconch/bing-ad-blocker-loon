@@ -1,19 +1,33 @@
 // ============================================================
-// Bing 去广告脚本 (Loon http-response)  v7
-// 适用：Microsoft Bing App / Bing 页面
-// 功能：
-//   1. HTML 搜索结果页：移除广告容器（class 含 b_ad / ads / ad-slide 等）
-//   2. HTML "Ad" 角标：找到带 adLabel/ad-label 角标的外层 card 整张删除（v7 关键修复）
-//   3. JSON 搜索 / 信息流 API：递归移除被标记为广告的对象与广告专用数组
-//   4. 文章详情页 viewsfullpage（region:"river"+dataTemplate:"partnerappviews-*"）：
-//      自动清理 cards 数组中 type:"nativead" 占位项（Bing 国区常见的交错广告位）
-//   5. 搜索结果推广卡（Booking.com / 携程 等 "Ad" 标签）：识别 isAd / adType /
-//      Algo:"Ads" / moduleType 含 ad|promo / source 为广告网络 等标记并剔除
-//   6. 调试模式：URL 带 ?__debug=1 或请求头 X-Bing-Debug: 1 时，
-//      在 Loon 日志打印完整响应结构，便于定位新的广告字段
-// 说明：本脚本对静态资源(图片/JS/CSS)直接放行，只处理 HTML / JSON。
-// 自证明：所有处理的响应都会带 X-Loon-AdBlock 响应头，便于抓包验证。
-// v7.1 变更：加 UA 白名单，只在 Bing iOS App 下执行脚本，避免影响 Edge 浏览器访问 bing.com 导致闪退。
+// Bing 去广告脚本 (Loon http-response)  v11
+// 运行环境：仅 Loon —— 通过 http-response 改写响应体，不使用域名 REJECT
+// 适用：Microsoft Bing App（主）及经 Loon MITM 的 Bing / MSN 页面
+//
+// 两条过滤路径（均在 Loon 脚本内完成，无需浏览器油猴）：
+//   A) JSON 响应（Bing App 信息流 / 文章页 / 搜索 API）
+//      在 App 渲染前删除 nativead、morefromprovider、推广文章，修正广告布局模板
+//   B) HTML 响应（搜索页、内嵌 WebView）
+//      ① stripHtmlAds：从响应 HTML 中删除广告 DOM
+//      ② injectHtmlAdGuard：在响应 <head> 写入 CSS + 脚本，兜底动态广告位
+//
+// 自证明：X-Loon-AdBlock: removed=N;v=10
+// 调试：URL ?__debug=1 或请求头 X-Bing-Debug: 1
+// v11 变更：
+//   - 消除过滤后的空白广告位：JSON 剔除 ghost 空卡片、强制 river 区非广告模板
+//   - HTML 删除空广告占位 DOM；注入脚本扫描并折叠无内容的大块空白卡片/灰色广告槽
+// v10 变更：
+//   - 插件移除全部 [Rule] 域名 REJECT，改为 Loon 纯 JS 过滤
+//   - HTML 响应注入 CSS/JS 兜底（由 Loon 写入响应体，非浏览器扩展）
+// v9 变更：
+//   - 移除全部 morefromprovider 推广块（不限 provider，含虎扑等外链"更多内容"区）
+//   - 剔除含 nativead 的 partnerappviews-*-card 模板，改为 backup-cards，
+//     避免客户端按 six-card 布局继续渲染 3 个空广告位（精选内容列表漏删根因）
+//   - 剔除 region=Rail 空壳区块；移除 isLocalContent=false 且 provider 为一点资讯的植入文章
+// v8 变更：
+//   - 移除 morefromprovider 第三方推广块（一点资讯等 provider 的"更多内容"植入区）
+//   - 移除 subCards / 文章卡片中直连 yidianzixun.com / go2yd.com 的第三方推广链
+//   - 递归清零 nextPageUrl 等 URL 字段里的 wpoNativeAdServed / wpoCmsAdServed，
+//     避免客户端翻页后继续预留/拉取原生广告位
 // v7 变更：
 //   - 修复搜索页"为你精选更多内容"区里 Booking.com Ad 卡片（带 "Ad" 角标）漏删
 //     原 v6 逻辑只删了 adLabel <span> 自身，外层 b_card 未删。v7 通过标签栈回溯
@@ -42,16 +56,17 @@
     return;
   }
 
-  // v7.1 修复：只在 Bing iOS App 的 User-Agent 下执行脚本，避免
-  // 影响 Edge 浏览器访问 bing.com 导致页面崩溃（原规则太宽，把所有 bing.com
-  // 响应都塞进脚本，改了正常浏览器的页面结构）。
+  // v7.1 修复：UA 过滤 —— 只在 BingApp 下执行脚本，避免影响 Edge 浏览器访问 bing.com 导致页面崩溃
   const ua = (reqHeaders['User-Agent'] || '').toLowerCase();
-  if (!/\bbingapp\b|\bing\b.*ios|\bing.*mobile/i.test(ua)) {
+  if (!/bingapp|ing.*ios|ing.*mobile/i.test(ua)) {
     $done({});
     return;
   }
 
   const isHTML = /text\/html/i.test(ct);
+
+  // MSN 页面（经 Loon MITM 的 HTML / JSON）
+  const isMsnWeb = /msn\.(com|cn)/i.test(url);
 
   // 文章 / 信息流接口（assets.msn.com 的 news feed）：需额外剔除 recoDoc 推广卡
   const isNewsFeed = /assets\.msn\.com\/service\/news\/feed\//i.test(url);
@@ -66,6 +81,7 @@
   try {
     if (isHTML) {
       body = stripHtmlAds(body);
+      body = injectHtmlAdGuard(body);
     } else {
       const r = stripJsonAds(body, isNewsFeed, isSearch);
       body = r.body;
@@ -86,17 +102,18 @@
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    ';v=7.1' +
+    ';v=11.1' +
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
     (isSearch ? ';search=1' : '') +
+    (isMsnWeb ? ';msn=1' : '') +
     (isHTML ? ';html=1' : '');
 
   // v6: 每条命中响应都打一行 Loon 日志（含 host），便于确认脚本真在跑、哪个接口还有广告
   try {
     const m = url.match(/^https?:\/\/([^\/]+)/i);
     const host = m ? m[1] : '?';
-    console.log('[Bing去广告] v7.1 OK host=' + host + ' removed=' +
+    console.log('[Bing去广告] v11.1 OK host=' + host + ' removed=' +
       (typeof removed !== 'undefined' ? removed : 0) + ' url=' + url.slice(0, 100));
   } catch (e) {}
 
@@ -213,10 +230,99 @@ function stripHtmlAds(html) {
   // —— Pass 3：兜底，隐藏残留广告容器避免空白占位 ——
   out = out.replace(
     /(<div[^>]*\bid="[^"]*\b(ad|ads)\b[^"]*"[^>]*>)/gi,
-    '$1 style="display:none!important;"'
+    '$1 style="display:none!important;height:0!important;"'
   );
 
+  // —— Pass 4：删除空的广告占位容器（v11：避免滤完后留空白块）——
+  const emptyAdPatterns = [
+    /<div[^>]*class="[^"]*\b(ad-slot|ad-container|ad-placeholder|native-ad|nativead|ad-slot-empty|wpo-native|promo-slot)\b[^"]*"[^>]*>\s*<\/div>/gi,
+    /<div[^>]*\bdata-(ad|aad|native-ad|ad-slot)\b[^>]*>\s*<\/div>/gi,
+    /<div[^>]*class="[^"]*\b(b_ad|adUnit|ads-container|ad-slide)\b[^"]*"[^>]*>\s*(?:&nbsp;|\s|-)*<\/div>/gi,
+    /<iframe[^>]*\b(ad|ads|sponsor|doubleclick|msads)\b[^>]*>\s*<\/iframe>/gi,
+    /<ins[^>]*class="[^"]*\badsbygoogle\b[^"]*"[^>]*>\s*<\/ins>/gi,
+  ];
+  emptyAdPatterns.forEach(function (p) {
+    out = out.replace(p, '');
+  });
+
   return out;
+}
+
+// ------------------------------------------------------------
+// HTML 注入：Loon 改写响应体时在 <head> 写入 CSS + 脚本，兜底 WebView 动态广告
+// ------------------------------------------------------------
+function injectHtmlAdGuard(html) {
+  if (typeof html !== 'string' || !html) return html;
+  if (/data-loon-bing-adblock/i.test(html)) return html;
+
+  var css =
+    '.b_ad,.b_adlabel,.adLabel,.ad-label,.ad-label-text,.ad_badge,.adBadge,.ad-badge,' +
+    '.adMarker,.ad-marker,.b_pag,.promo-card,.sponsored-card,.tile--ad,' +
+    '.ad-slot,.adUnit,.ads-feed,.ads-container,.ad-slide,[data-aad],' +
+    '[class*="ad-slot"],[class*="sponsored"],[class*="promo-card"],' +
+    '[class*="native-ad"],[class*="nativead"],[class*="ad-placeholder"],' +
+    '[data-ad-slot],[data-native-ad],[data-ad],[data-aad],' +
+    '.loon-bing-empty-slot' +
+    '{display:none!important;height:0!important;max-height:0!important;' +
+    'min-height:0!important;overflow:hidden!important;margin:0!important;' +
+    'padding:0!important;border:none!important;visibility:hidden!important;' +
+    'pointer-events:none!important}';
+
+  // 删除/折叠空白广告位：无图无链的大块空 card、文章内灰色广告槽
+  var js =
+    '(function(){' +
+    'if(window.__bingAdBlocker)return;window.__bingAdBlocker=1;' +
+    'var BADGE=/\\b(adLabel|ad-label|ad-label-text|ad_badge|adBadge|ad-badge|adMarker|ad-marker|b_adlabel|b_adLabel)\\b/i;' +
+    'var CARD=/\\b(b_card|b_algo|b_entity|b_results|b_algoheader|b_answer)\\b/;' +
+    'var ADCLASS=/\\b(ad|ads|native|slot|promo|sponsor|wpo|placeholder|river-card|feed-ad)\\b/i;' +
+    'var SEL=[".b_ad",".b_adlabel",".adLabel",".ad-label",".ad-badge",".adBadge",' +
+    '"[class*=\\"ad-slot\\"]","[class*=\\"sponsored\\"]","[class*=\\"promo-card\\"]",' +
+    '"[class*=\\"native-ad\\"]","[class*=\\"nativead\\"]","[data-aad]","[data-ad-slot]"];' +
+    'function rm(el){if(!el||!el.parentNode)return;el.classList.add("loon-bing-empty-slot");' +
+    'el.style.cssText="display:none!important;height:0!important;max-height:0!important;min-height:0!important;overflow:hidden!important;margin:0!important;padding:0!important";' +
+    'try{el.remove()}catch(e){}}' +
+    'function txt(el){return((el.innerText||el.textContent||"")+"").replace(/[\\s\\-\\–\\—]/g,"");}' +
+    'function hasContent(el){if(!el)return true;' +
+    'if(el.querySelector("img[src],video,iframe[src],picture,source,a[href]"))return true;' +
+    'return txt(el).length>10;}' +
+    'function hideCardFromBadge(node){' +
+    'var el=node;var card=null;for(var i=0;i<8&&el;i++){if(el.matches&&(el.matches("li,article,section,.b_card,.b_algo,.b_entity,.b_results")||CARD.test(el.className||"")))card=el;el=el.parentElement;}' +
+    'rm(card||node);}' +
+    'function isEmptySlot(el){' +
+    'if(!el||!el.getBoundingClientRect)return false;' +
+    'var r=el.getBoundingClientRect();if(r.height<28||r.width<60)return false;' +
+    'if(hasContent(el))return false;' +
+    'var cn=(el.className||"")+" "+(el.id||"")+" "+(el.getAttribute("data-type")||"");' +
+    'if(ADCLASS.test(cn))return true;' +
+    'if(r.height>=40&&txt(el).length<=2)return true;' +
+    'try{var bg=window.getComputedStyle(el).backgroundColor||"";' +
+    'if(r.height>=70&&txt(el).length<=5&&/rgb\\(|#/.test(bg)&&!/rgb\\(\\s*255/.test(bg))return true;}catch(e){}' +
+    'return false;}' +
+    'function sweepEmpty(){' +
+    'try{document.querySelectorAll("div,li,article,section,aside,a").forEach(function(el){' +
+    'if(isEmptySlot(el))rm(el);});}catch(e){}}' +
+    'function sweep(){' +
+    'SEL.forEach(function(s){try{document.querySelectorAll(s).forEach(function(el){' +
+    'var p=el.closest(".b_card,.b_algo,.b_entity,.b_results,li,article,section")||el;rm(p);});}catch(e){}});' +
+    'try{document.querySelectorAll("[class]").forEach(function(el){' +
+    'if(BADGE.test(el.className))hideCardFromBadge(el);});}catch(e){}' +
+    'sweepEmpty();' +
+    '}' +
+    'sweep();' +
+    'new MutationObserver(sweep).observe(document.documentElement,{childList:true,subtree:true,attributes:true});' +
+    '})();';
+
+  var payload =
+    '<style data-loon-bing-adblock="1">' + css + '</style>' +
+    '<script data-loon-bing-adblock="1">' + js + '</script>';
+
+  if (/<head[\s>]/i.test(html)) {
+    return html.replace(/<head[\s>]/i, function (m) { return m + payload; });
+  }
+  if (/<html[\s>]/i.test(html)) {
+    return html.replace(/<html[\s>]/i, function (m) { return m + payload; });
+  }
+  return payload + html;
 }
 
 // ------------------------------------------------------------
@@ -234,6 +340,155 @@ function stripJsonAds(text, isNewsFeed, isSearch) {
 
   // 是否剔除 slideshow(River) 推荐位卡片（默认开；若只想删第三方植入、保留编辑相关推荐，改为 false）
   const BLOCK_SLIDESHOW_RIVER = true;
+
+  // 已知第三方推广 provider（来自 2026-08-18 真机抓包）
+  const THIRD_PARTY_PROVIDERS = /^(一点资讯|yidian|yidianzixun|go2yd|taboola|outbrain)$/i;
+  const THIRD_PARTY_PROVIDER_IDS = /^(BB1nuSr4)$/i;
+  const EXTERNAL_PROMO_HOST = /(^|\.)(yidianzixun|go2yd|doris\.yidianzixun|hupu)\.com$/i;
+  const AD_LAYOUT_TEMPLATE = /partnerappviews-(?:six|four|two)-card|(?:six|four|two)-card-one-col/i;
+  const SAFE_LAYOUT_TEMPLATE = 'backup-cards';
+
+  function isGhostCard(o) {
+    if (!o || typeof o !== 'object') return false;
+    var t = (o.type || '').toLowerCase();
+    if (t === 'nativead' || t === 'ad' || t === 'webcontent') return true;
+    var keys = Object.keys(o);
+    if (!o.title && !o.url && !o.id && !o.abstract) {
+      if (keys.length <= 3) return true;
+      if (keys.length <= 4 && o.isLocalContent === false) return true;
+    }
+    return false;
+  }
+
+  function pruneGhostCards(node) {
+    if (Array.isArray(node)) {
+      for (var i = node.length - 1; i >= 0; i--) {
+        if (isGhostCard(node[i])) {
+          node.splice(i, 1);
+          removed++;
+        } else {
+          pruneGhostCards(node[i]);
+        }
+      }
+    } else if (node && typeof node === 'object') {
+      for (var k in node) {
+        if (node[k] && typeof node[k] === 'object') pruneGhostCards(node[k]);
+      }
+    }
+  }
+
+  function sanitizeRiverLayouts(node) {
+    if (!node || !Array.isArray(node.sections)) return;
+    node.sections.forEach(function (sec) {
+      if (!/^river$/i.test(sec.region || '')) return;
+      (sec.subSections || []).forEach(function (sub) {
+        var tpl = (sub.dataTemplate || '') + (sub.layoutTemplate || '');
+        if (/partnerappviews|card-one-col|native/i.test(tpl)) {
+          sub.dataTemplate = SAFE_LAYOUT_TEMPLATE;
+          sub.layoutTemplate = SAFE_LAYOUT_TEMPLATE;
+        }
+      });
+    });
+  }
+
+  function providerName(o) {
+    if (!o || !o.provider) return '';
+    if (typeof o.provider === 'string') return o.provider;
+    if (typeof o.provider === 'object') return o.provider.name || o.provider.id || '';
+    return '';
+  }
+
+  function providerId(o) {
+    if (!o || !o.provider || typeof o.provider !== 'object') return '';
+    return o.provider.id || '';
+  }
+
+  function firstExternalPromoHost(o) {
+    const urls = [o.url, o.targetUrl, o.clickUrl, o.promotionalUrl];
+    if (o.provider && typeof o.provider === 'object') {
+      urls.push(o.provider.promotionalUrl, o.provider.url);
+    }
+    for (let i = 0; i < urls.length; i++) {
+      const u = urls[i];
+      if (typeof u !== 'string') continue;
+      const m = u.match(/^https?:\/\/([^/]+)/i);
+      if (m && EXTERNAL_PROMO_HOST.test(m[1].toLowerCase())) return m[1].toLowerCase();
+    }
+    return '';
+  }
+
+  function isThirdPartyProvider(o) {
+    const name = providerName(o);
+    const id = providerId(o);
+    return (name && THIRD_PARTY_PROVIDERS.test(name)) ||
+      (id && THIRD_PARTY_PROVIDER_IDS.test(id));
+  }
+
+  function isSyndicatedPromoArticle(o) {
+    if (!o || typeof o !== 'object') return false;
+    if ((o.type || '').toLowerCase() !== 'article') return false;
+    if (o.isLocalContent !== false) return false;
+    return isThirdPartyProvider(o);
+  }
+
+  function sanitizeAdTemplates(node) {
+    if (!node || typeof node !== 'object') return node;
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) node[i] = sanitizeAdTemplates(node[i]);
+      return node;
+    }
+    for (const k in node) {
+      const v = node[k];
+      if ((k === 'dataTemplate' || k === 'layoutTemplate' || k === 'template') &&
+          typeof v === 'string' && AD_LAYOUT_TEMPLATE.test(v)) {
+        node[k] = SAFE_LAYOUT_TEMPLATE;
+      } else if (v && typeof v === 'object') {
+        node[k] = sanitizeAdTemplates(v);
+      }
+    }
+    return node;
+  }
+
+  function pruneEmptyFeedSections(node) {
+    if (!node || typeof node !== 'object') return;
+    if (!Array.isArray(node.sections)) return;
+    for (let i = node.sections.length - 1; i >= 0; i--) {
+      const sec = node.sections[i];
+      if (!sec || !Array.isArray(sec.subSections)) continue;
+      for (let j = sec.subSections.length - 1; j >= 0; j--) {
+        const sub = sec.subSections[j];
+        const cards = sub && sub.cards;
+        if (Array.isArray(cards) && cards.length === 0) {
+          sec.subSections.splice(j, 1);
+        }
+      }
+      const isEmpty = sec.subSections.length === 0;
+      const isRail = /^rail$/i.test(sec.region || '');
+      if (isEmpty || (isRail && sec.subSections.every(function (sub) {
+        return !sub.cards || sub.cards.length === 0;
+      }))) {
+        node.sections.splice(i, 1);
+      }
+    }
+  }
+
+  function sanitizeAdUrls(node) {
+    if (typeof node === 'string') {
+      if (!/wpoNativeAdServed=|wpoCmsAdServed=|cardsServed=/i.test(node)) return node;
+      return node
+        .replace(/([?&])wpoNativeAdServed=\d+/gi, '$1wpoNativeAdServed=0')
+        .replace(/([?&])wpoCmsAdServed=\d+/gi, '$1wpoCmsAdServed=0')
+        .replace(/([?&])cardsServed=\d+/gi, '$1cardsServed=0');
+    }
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) node[i] = sanitizeAdUrls(node[i]);
+      return node;
+    }
+    if (node && typeof node === 'object') {
+      for (const k in node) node[k] = sanitizeAdUrls(node[k]);
+    }
+    return node;
+  }
 
   // 常见广告标记字段（命中其一即视为广告对象）
   // 下列字段均来自真实设备抓包：
@@ -324,6 +579,18 @@ function stripJsonAds(text, isNewsFeed, isSearch) {
     // 1) 第三方注入内容（一点资讯 / yidianzixun 等）—— 明确推广
     if (t === 'webcontent') return true;
 
+    // 1b) v9：全部 morefromprovider 推广块（虎扑/一点等外链"更多内容"）
+    if (t === 'morefromprovider') return true;
+
+    // 1c) v8 遗留：第三方 provider 的 morefromprovider（已由 1b 覆盖，保留注释）
+    // if (t === 'morefromprovider' && isThirdPartyProvider(o)) return true;
+
+    // 1d) v9：一点资讯等第三方 syndicated 植入文章（isLocalContent=false）
+    if (isSyndicatedPromoArticle(o)) return true;
+
+    // 1e) v8：卡片 URL 直连第三方推广域（如 doris.yidianzixun.com）
+    if (firstExternalPromoHost(o)) return true;
+
     // 2) 推荐/广告位轮播（River 为微软推荐位）
     if (t === 'slideshow' && BLOCK_SLIDESHOW_RIVER && /river/i.test(o.placement || '')) return true;
 
@@ -366,6 +633,11 @@ function stripJsonAds(text, isNewsFeed, isSearch) {
   }
 
   clean(data);
+  pruneGhostCards(data);
+  sanitizeAdTemplates(data);
+  sanitizeRiverLayouts(data);
+  sanitizeAdUrls(data);
+  pruneEmptyFeedSections(data);
   console.log('[Bing去广告] 已移除广告条目数=' + removed);
   return { body: JSON.stringify(data), removed: removed };
 }
