@@ -13,6 +13,7 @@
 //      在 Loon 日志打印完整响应结构，便于定位新的广告字段
 // 说明：本脚本对静态资源(图片/JS/CSS)直接放行，只处理 HTML / JSON。
 // 自证明：所有处理的响应都会带 X-Loon-AdBlock 响应头，便于抓包验证。
+// v7.1 变更：加 UA 白名单，只在 Bing iOS App 下执行脚本，避免影响 Edge 浏览器访问 bing.com 导致闪退。
 // v7 变更：
 //   - 修复搜索页"为你精选更多内容"区里 Booking.com Ad 卡片（带 "Ad" 角标）漏删
 //     原 v6 逻辑只删了 adLabel <span> 自身，外层 b_card 未删。v7 通过标签栈回溯
@@ -37,6 +38,15 @@
 
   // 仅处理 HTML / JSON；其余（图片、脚本、字体等）直接放行
   if (!/text\/html|application\/json|text\/json|\bjson\b/i.test(ct)) {
+    $done({});
+    return;
+  }
+
+  // v7.1 修复：只在 Bing iOS App 的 User-Agent 下执行脚本，避免
+  // 影响 Edge 浏览器访问 bing.com 导致页面崩溃（原规则太宽，把所有 bing.com
+  // 响应都塞进脚本，改了正常浏览器的页面结构）。
+  const ua = (reqHeaders['User-Agent'] || '').toLowerCase();
+  if (!/\bbingapp\b|\bing\b.*ios|\bing.*mobile/i.test(ua)) {
     $done({});
     return;
   }
@@ -76,7 +86,7 @@
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    ';v=7' +
+    ';v=7.1' +
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
     (isSearch ? ';search=1' : '') +
@@ -86,7 +96,7 @@
   try {
     const m = url.match(/^https?:\/\/([^\/]+)/i);
     const host = m ? m[1] : '?';
-    console.log('[Bing去广告] v7 OK host=' + host + ' removed=' +
+    console.log('[Bing去广告] v7.1 OK host=' + host + ' removed=' +
       (typeof removed !== 'undefined' ? removed : 0) + ' url=' + url.slice(0, 100));
   } catch (e) {}
 
