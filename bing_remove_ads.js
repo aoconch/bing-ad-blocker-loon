@@ -56,6 +56,13 @@
     return;
   }
 
+  // v11.1 修复：UA 过滤 —— 只在 BingApp 下执行脚本，避免影响 Edge 浏览器访问 bing.com 导致页面崩溃
+  const ua = (reqHeaders["User-Agent"] || "").toLowerCase();
+  if (!/\bbingapp\b|\bing\b.*ios|\bing.*mobile/i.test(ua)) {
+    $done({});
+    return;
+  }
+
   const isHTML = /text\/html/i.test(ct);
 
   // MSN 页面（经 Loon MITM 的 HTML / JSON）
