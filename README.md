@@ -21,7 +21,7 @@
 **推荐：commit 固定地址（不走 CDN 缓存，永远拿到确切版本）**
 
 ```
-https://cdn.jsdelivr.net/gh/aoconch/bing-ad-blocker-loon@4d3ebcb/Bing-AD-Blocker.plugin
+https://cdn.jsdelivr.net/gh/aoconch/bing-ad-blocker-loon@c2343aa/Bing-AD-Blocker.plugin
 ```
 
 （v7 — 修复搜索页"为你精选更多内容"区里 Booking.com 等带"Ad"角标的卡片漏删）
