@@ -56,13 +56,6 @@
     return;
   }
 
-  // v7.1 修复：UA 过滤 —— 只在 BingApp 下执行脚本，避免影响 Edge 浏览器访问 bing.com 导致页面崩溃
-  const ua = (reqHeaders['User-Agent'] || '').toLowerCase();
-  if (!/bingapp|ing.*ios|ing.*mobile/i.test(ua)) {
-    $done({});
-    return;
-  }
-
   const isHTML = /text\/html/i.test(ct);
 
   // MSN 页面（经 Loon MITM 的 HTML / JSON）
@@ -102,7 +95,7 @@
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    ';v=11.1' +
+    ';v=11' +
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
     (isSearch ? ';search=1' : '') +
@@ -113,7 +106,7 @@
   try {
     const m = url.match(/^https?:\/\/([^\/]+)/i);
     const host = m ? m[1] : '?';
-    console.log('[Bing去广告] v11.1 OK host=' + host + ' removed=' +
+    console.log('[Bing去广告] v11 OK host=' + host + ' removed=' +
       (typeof removed !== 'undefined' ? removed : 0) + ' url=' + url.slice(0, 100));
   } catch (e) {}
 
