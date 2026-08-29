@@ -7,6 +7,7 @@ set -e
 REPO="bing-ad-blocker-loon"
 PLUGIN="Bing-AD-Blocker.plugin"
 JS="bing_remove_ads.js"
+JS_REQ="bing_block_request.js"
 
 # ---- 0. 环境与登录检查 ----
 if ! command -v gh >/dev/null 2>&1; then
@@ -47,7 +48,7 @@ gh repo create "$REPO" --public --description "Loon 插件：屏蔽 Bing App 首
 
 echo "[*] 初始化 git 并提交 ..."
 git init -q
-git add "$PLUGIN" "$JS" README.md
+git add "$PLUGIN" "$JS" "$JS_REQ" README.md
 git commit -qm "init: Bing AD Blocker for Loon (real-device calibrated)"
 
 echo "[*] 推送 main 分支 ..."

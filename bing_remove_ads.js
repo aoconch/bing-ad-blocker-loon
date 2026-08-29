@@ -1,6 +1,9 @@
 // ============================================================
-// Bing 去广告脚本 (Loon http-response)  v7
+// Bing 去广告脚本 (Loon http-response)  v8
 // 适用：Microsoft Bing App / Bing 页面
+// 架构：本插件「纯 JS、零 Rule」—— 网络层广告域名由 bing_block_request.js
+//       (http-request) 拦截；本脚本只负责「剔除混在合法响应里的内联广告」：
+//       Bing 首页信息流 / 搜索结果页 / 文章详情页里嵌的广告 JSON 对象与 HTML 容器。
 // 功能：
 //   1. HTML 搜索结果页：移除广告容器（class 含 b_ad / ads / ad-slide 等）
 //   2. HTML "Ad" 角标：找到带 adLabel/ad-label 角标的外层 card 整张删除（v7 关键修复）
@@ -9,11 +12,13 @@
 //      自动清理 cards 数组中 type:"nativead" 占位项（Bing 国区常见的交错广告位）
 //   5. 搜索结果推广卡（Booking.com / 携程 等 "Ad" 标签）：识别 isAd / adType /
 //      Algo:"Ads" / moduleType 含 ad|promo / source 为广告网络 等标记并剔除
-//   6. 调试模式：URL 带 ?__debug=1 或请求头 X-Bing-Debug: 1 时，
-//      在 Loon 日志打印完整响应结构，便于定位新的广告字段
+//   6. 调试模式：URL 带 ?__debug=1 时，在 Loon 日志打印完整响应结构，便于定位新广告字段
 // 说明：本脚本对静态资源(图片/JS/CSS)直接放行，只处理 HTML / JSON。
 // 自证明：所有处理的响应都会带 X-Loon-AdBlock 响应头，便于抓包验证。
-// v7 变更：
+// v8 变更：
+//   - 配套 bing_block_request.js 把原 [Rule] REJECT 全部迁到 JS，本脚本改为「纯内联剥离」角色。
+//   - 自证明头版本号升到 v8。
+// v7 变更（历史）：
 //   - 修复搜索页"为你精选更多内容"区里 Booking.com Ad 卡片（带 "Ad" 角标）漏删
 //     原 v6 逻辑只删了 adLabel <span> 自身，外层 b_card 未删。v7 通过标签栈回溯
 //     找到包含角标的最外层块级元素（div/section/li/article）整张删除。
@@ -76,7 +81,7 @@
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    ';v=7' +
+    ';v=8' +
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
     (isSearch ? ';search=1' : '') +
@@ -86,7 +91,7 @@
   try {
     const m = url.match(/^https?:\/\/([^\/]+)/i);
     const host = m ? m[1] : '?';
-    console.log('[Bing去广告] v7 OK host=' + host + ' removed=' +
+    console.log('[Bing去广告] v8 OK host=' + host + ' removed=' +
       (typeof removed !== 'undefined' ? removed : 0) + ' url=' + url.slice(0, 100));
   } catch (e) {}
 

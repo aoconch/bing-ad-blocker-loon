@@ -1,97 +1,41 @@
 #!name = Bing 广告屏蔽
-#!desc = 屏蔽 Microsoft Bing App 首页信息流原生广告、RTB 竞价广告与推广/追踪（基于 2026-08-18 真机抓包校准）
+#!desc = 屏蔽 Microsoft Bing App 首页信息流原生广告、RTB 竞价广告与推广/追踪（纯 JS 拦截，零 Rule，基于 2026-08-18 真机抓包校准）
 #!author = WorkBuddy
 #!homepage = https://github.com/aoconch/bing-ad-blocker-loon
 #!tag = 去广告, Bing
 #!type = normal
 
 # ============================================================
-# [Rule] 广告 / 追踪域名拦截
-# 下列域名均来自真机抓包（286 个请求、286 条记录）实测确认。
-# 把广告/竞价/追踪请求直接 REJECT，Bing App 中的广告资源无法加载。
+# 设计说明（v8 · 纯 JS、零 Rule）
+# ------------------------------------------------------------
+# 本插件不再使用任何 [Rule] 域名拦截。所有去广告逻辑都在两个 JS 脚本里：
+#   ① bing_block_request.js  —— http-request：在「请求发出前」按域名后缀
+#       拦截广告 / 竞价 / 追踪请求（等价于原 DOMAIN-SUFFIX,REJECT）。
+#   ② bing_remove_ads.js     —— http-response：剔除混在合法响应里的内联广告
+#       （首页信息流的 {"type":"nativead"} 卡、搜索结果推广卡、文章植入卡）。
+# HTTPS 脚本需要 MitM 才能看到请求/响应，因此下方 [Mitm] 列出了全部需解密的域名。
 # ============================================================
-[Rule]
-# ---- ① Bing 实时竞价广告交换（RTB Auction）—— 关掉它就没有广告可投 ----
-DOMAIN-SUFFIX,srtb.msn.com,REJECT
-DOMAIN-SUFFIX,srtb.msn.cn,REJECT
-
-# ---- ② Microsoft 自有广告域 ----
-DOMAIN-SUFFIX,msads.net,REJECT
-DOMAIN-SUFFIX,ads.msn.com,REJECT
-DOMAIN-SUFFIX,bingads.microsoft.com,REJECT
-DOMAIN-SUFFIX,ads1.msads.net,REJECT
-DOMAIN-SUFFIX,ads2.msads.net,REJECT
-
-# ---- ③ 推广/奖励平台（含 promotions / limitedTimeOffer / brandId 卡片）----
-#     说明：REJECT 后会同时去掉首页"奖励/优惠"推广卡；若你仍想保留 Bing 奖励，
-#           把下面这行注释掉（前面加 #）即可，广告仍会被 [Script] 的内联剥离处理。
-DOMAIN-SUFFIX,prod.rewardsplatform.microsoft.com,REJECT
-
-# ---- ④ 第三方广告/追踪联盟（覆盖大多数通用广告）----
-DOMAIN-SUFFIX,doubleclick.net,REJECT
-DOMAIN-SUFFIX,googlesyndication.com,REJECT
-DOMAIN-SUFFIX,googleadservices.com,REJECT
-DOMAIN-SUFFIX,adservice.google.com,REJECT
-DOMAIN-SUFFIX,adnxs.com,REJECT
-DOMAIN-SUFFIX,rubiconproject.com,REJECT
-DOMAIN-SUFFIX,pubmatic.com,REJECT
-DOMAIN-SUFFIX,criteo.com,REJECT
-DOMAIN-SUFFIX,criteo.net,REJECT
-DOMAIN-SUFFIX,moatads.com,REJECT
-DOMAIN-SUFFIX,spotx.tv,REJECT
-DOMAIN-SUFFIX,openx.net,REJECT
-DOMAIN-SUFFIX,scorecardresearch.com,REJECT
-DOMAIN-SUFFIX,taboola.com,REJECT
-DOMAIN-SUFFIX,outbrain.com,REJECT
-DOMAIN-SUFFIX,adform.net,REJECT
-DOMAIN-SUFFIX,adroll.com,REJECT
-DOMAIN-SUFFIX,advertising.com,REJECT
-DOMAIN-SUFFIX,adtechus.com,REJECT
-DOMAIN-SUFFIX,adsrvr.org,REJECT
-DOMAIN-SUFFIX,bounceexchange.com,REJECT
-DOMAIN-SUFFIX,rfihub.com,REJECT
-DOMAIN-SUFFIX,crwdcntrl.net,REJECT
-DOMAIN-SUFFIX,adsystem.com,REJECT
-DOMAIN-SUFFIX,adservice.com,REJECT
-
-# ---- ⑤ 行为/归因追踪（不影响广告显示，仅停止数据上报）----
-DOMAIN-SUFFIX,analytics.adjust.io,REJECT
-DOMAIN-SUFFIX,analytics.adjust.com,REJECT
-DOMAIN-SUFFIX,self.events.data.microsoft.com,REJECT
-DOMAIN-SUFFIX,gateway.bingviz.microsoftapp.net,REJECT
-DOMAIN-SUFFIX,firebase-settings.crashlytics.com,REJECT
-DOMAIN-SUFFIX,firebaselogging-pa.googleapis.com,REJECT
-
-# ---- ⑥ 文章信息流里的第三方植入内容（一点资讯 / Yidian 等）----
-#     这些域名出现在 assets.msn.com 文章接口的 webcontent 卡片里（provider=一点资讯）。
-#     REJECT 后即使卡片没被脚本剥掉，内容也无法加载。
-DOMAIN-SUFFIX,yidianzixun.com,REJECT
-DOMAIN-SUFFIX,go2yd.com,REJECT
-DOMAIN-SUFFIX,doris.yidianzixun.com,REJECT
 
 # ============================================================
 # [Mitm] 需要解密 HTTPS 的域名
-# 仅对 Bing / MSN / Microsoft 广告域开启 MitM，以便脚本剔除内联广告。
-# assets.msn.com 是首页信息流接口（含 {"type":"nativead"} 原生广告卡）。
+# 仅对 Bing / MSN / Microsoft 广告域 + 第三方广告/追踪域开启 MitM，
+# 以便 JS 脚本在请求/响应阶段拦截或剥离广告。
+# 注：透明解密这些域仅影响走 Loon 的流量，不影响其它 App。
 # ============================================================
 [Mitm]
-hostname = bing.com, *.bing.com, *.msn.com, *.msads.net, assets.msn.com
+hostname = bing.com, *.bing.com, *.msn.com, *.msads.net, msads.net, assets.msn.com, srtb.msn.com, srtb.msn.cn, ads.msn.com, bingads.microsoft.com, prod.rewardsplatform.microsoft.com, doubleclick.net, *.doubleclick.net, googlesyndication.com, *.googlesyndication.com, googleadservices.com, *.googleadservices.com, adservice.google.com, adnxs.com, *.adnxs.com, rubiconproject.com, *.rubiconproject.com, pubmatic.com, *.pubmatic.com, criteo.com, *.criteo.com, criteo.net, *.criteo.net, moatads.com, *.moatads.com, spotx.tv, *.spotx.tv, openx.net, *.openx.net, scorecardresearch.com, *.scorecardresearch.com, taboola.com, *.taboola.com, outbrain.com, *.outbrain.com, adform.net, *.adform.net, adroll.com, *.adroll.com, advertising.com, *.advertising.com, adtechus.com, *.adtechus.com, adsrvr.org, *.adsrvr.org, bounceexchange.com, *.bounceexchange.com, rfihub.com, *.rfihub.com, crwdcntrl.net, *.crwdcntrl.net, adsystem.com, *.adsystem.com, adservice.com, *.adservice.com, analytics.adjust.io, *.analytics.adjust.io, analytics.adjust.com, *.analytics.adjust.com, self.events.data.microsoft.com, gateway.bingviz.microsoftapp.net, firebase-settings.crashlytics.com, firebaselogging-pa.googleapis.com, yidianzixun.com, *.yidianzixun.com, go2yd.com, doris.yidianzixun.com
 
 # ============================================================
-# [Script] 响应修改脚本
-# 作用：
-#   - assets.msn.com 首页信息流接口 → 递归移除 {"type":"nativead"} 原生广告卡
-#   - bing.com 搜索/页面 → 移除搜索推广与广告容器
-# 注意：script-path 需替换为你的托管地址（与 .plugin 放同一目录）。
-#      若不想用脚本，仅 [Rule] 域名拦截已能去除绝大多数广告。
+# [Script]  v2 语法（Loon 3.5.1 983+）
+#   request  / response  if <condition> then script("<url>"[, <arg>]) with <options>
 # ============================================================
 [Script]
-# 脚本统一从 GitHub raw 加载（@main 始终为最新版，由 Loon 的 githubusercontent.com 代理拉取）。
-# 注意：此前走 jsDelivr CDN 时，@main 分支被 CDN 缓存节流卡在旧版（v4），
-#       导致插件一直加载不到带 nativead 处理逻辑的新版。故改回 raw.githubusercontent.com @main，
-#       保证「插件与脚本永远同源、永远最新」，彻底绕开 CDN 缓存。
-# 首页信息流原生广告卡（assets.msn.com /service/news/feed/pages/*）
-http-response ^https?:\/\/assets\.msn\.com\/service\/(news|graph)\/.* script-path=https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js,requires-body=true,timeout=20,tag=Bing去广告(信息流),enable=true
+# ① 请求阶段：按域名后缀拦截广告 / 竞价 / 追踪（替代原 [Rule] REJECT）
+#    脚本内部持有一份权威域名表，命中即返回空响应，未命中一律放行。
+request if ${url} ~= /^https?:\/\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_block_request.js") with tag="Bing去广告(请求拦截)", timeout=10
 
-# 搜索结果页 / 其它 Bing 页面
-http-response ^https?:\/\/([a-z0-9-]+\.)*bing\.com\/.* script-path=https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js,requires-body=true,timeout=20,tag=Bing去广告(搜索),enable=true
+# ② 响应阶段：剔除首页信息流 / 搜索结果 / 文章页里内联的广告
+#    每个 response 规则都带 URL Guard（命中必要条件），符合 v2 语法要求。
+response if ${url} ~= /^https?:\/\/([a-z0-9-]+\.)*bing\.com\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(搜索)", timeout=20, requires_body=true
+
+response if ${url} ~= /^https?:\/\/assets\.msn\.com\/service\/(news|graph)\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(信息流)", timeout=20, requires_body=true
