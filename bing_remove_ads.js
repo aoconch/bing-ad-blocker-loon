@@ -8,13 +8,16 @@
 //   1. HTML 搜索结果页：移除广告容器（class 含 b_ad / ads / ad-slide 等）
 //   2. HTML "Ad" 角标：找到带 adLabel/ad-label 角标的外层 card 整张删除（v7 关键修复）
 //   3. JSON 搜索 / 信息流 API：递归移除被标记为广告的对象与广告专用数组
-//   4. 文章详情页 viewsfullpage（region:"river"+dataTemplate:"partnerappviews-*"）：
-//      自动清理 cards 数组中 type:"nativead" 占位项（Bing 国区常见的交错广告位）
+//   4. 文章详情页 viewsfullpage：直接删除 region:"river" 整个区块
+//      （即 UI 里的"为你精选更多内容"，包含 Booking.com 等原生广告卡）
 //   5. 搜索结果推广卡（Booking.com / 携程 等 "Ad" 标签）：识别 isAd / adType /
 //      Algo:"Ads" / moduleType 含 ad|promo / source 为广告网络 等标记并剔除
 //   6. 调试模式：URL 带 ?__debug=1 时，在 Loon 日志打印完整响应结构，便于定位新广告字段
 // 说明：本脚本对静态资源(图片/JS/CSS)直接放行，只处理 HTML / JSON。
 // 自证明：所有处理的响应都会带 X-Loon-AdBlock 响应头，便于抓包验证。
+// v9 变更：
+//   - 文章详情页：直接删除整个 region:"river" 区块（对应 UI 里的"为你精选更多内容"），
+//     不再逐张删里面的 nativead/slideshow 卡，避免 Booking.com 等 Ad 卡残留。
 // v8 变更：
 //   - 配套 bing_block_request.js 把原 [Rule] REJECT 全部迁到 JS，本脚本改为「纯内联剥离」角色。
 //   - 自证明头版本号升到 v8。
@@ -84,7 +87,7 @@
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    ';v=8' +
+    ';v=9' +
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
     (isSearch ? ';search=1' : '') +
@@ -95,7 +98,7 @@
   try {
     const m = url.match(/^https?:\/\/([^\/]+)/i);
     const host = m ? m[1] : '?';
-    console.log('[Bing去广告] v8 OK host=' + host + ' removed=' +
+    console.log('[Bing去广告] v9 OK host=' + host + ' removed=' +
       (typeof removed !== 'undefined' ? removed : 0) +
       (isRewards ? ' [奖励]' : '') + ' url=' + url.slice(0, 100));
   } catch (e) {}
@@ -221,8 +224,9 @@ function stripHtmlAds(html) {
 
 // ------------------------------------------------------------
 // JSON：递归移除广告对象与广告数组
-//   isNewsFeed=true 时，额外剔除文章/信息流里的 recoDoc 推广卡
-//   （webcontent=第三方一点资讯植入；slideshow(placement:River)=微软推荐位）
+//   isNewsFeed=true 时，额外剔除文章/信息流里的 recoDoc 第三方推广卡
+//   （webcontent=第三方一点资讯植入；跳转到非 MSN/Bing/Microsoft 域名的推荐卡）
+//   注意：整个 region:"river"（"为你精选更多内容"）区块会在 clean() 之前整段删除。
 // ------------------------------------------------------------
 function stripJsonAds(text, isNewsFeed, isSearch) {
   let data;
@@ -231,9 +235,6 @@ function stripJsonAds(text, isNewsFeed, isSearch) {
   } catch (e) {
     return text;
   }
-
-  // 是否剔除 slideshow(River) 推荐位卡片（默认开；若只想删第三方植入、保留编辑相关推荐，改为 false）
-  const BLOCK_SLIDESHOW_RIVER = true;
 
   // 常见广告标记字段（命中其一即视为广告对象）
   // 下列字段均来自真实设备抓包：
@@ -259,6 +260,32 @@ function stripJsonAds(text, isNewsFeed, isSearch) {
   const adArrays = /^(ads|advertisements|promotions|promotedList|sponsoredResults|adResults|adItems|nativeAds|adTiles)$/i;
 
   let removed = 0;
+
+  // 删除整个 "river" 区块（对应 UI "为你精选更多内容"）
+  // 该区块在 config 里的标题键是 riverHeading，响应里 section.region === "river"
+  function removeSectionsByRegion(node, region) {
+    let r = 0;
+    if (Array.isArray(node)) {
+      for (let i = node.length - 1; i >= 0; i--) {
+        const item = node[i];
+        if (item && typeof item === 'object' && !Array.isArray(item) &&
+            String(item.region || '').toLowerCase() === region) {
+          node.splice(i, 1);
+          r++;
+        } else {
+          r += removeSectionsByRegion(item, region);
+        }
+      }
+    } else if (node && typeof node === 'object') {
+      for (const k in node) {
+        r += removeSectionsByRegion(node[k], region);
+      }
+    }
+    return r;
+  }
+
+  // 先整段删除 "river" 区块，再递归清理剩余广告对象
+  removed += removeSectionsByRegion(data, 'river');
 
   function isAdObject(o) {
     if (!o || typeof o !== 'object') return false;
@@ -288,10 +315,6 @@ function stripJsonAds(text, isNewsFeed, isSearch) {
     for (let i = 0; i < STRONG_AD_KEYS.length; i++) {
       if (STRONG_AD_KEYS[i] in o) return true;
     }
-
-    // 1.6) 推荐流里的 River 原生广告位：recoDocMetadata（推荐模块）+ placement:"River"
-    //      （伪装成 type:"article" 的赞助卡，provider 多为第三方如一点资讯）
-    if (o.recoDocMetadata && /river/i.test(o.placement || '')) return true;
 
     // 1b) v6：Algo / moduleType / cardType / template 等“广告位”标记
     const posMarkers = ['Algo', 'moduleType', 'cardType', 'template', 'placement', 'dataSource'];
@@ -345,10 +368,7 @@ function stripJsonAds(text, isNewsFeed, isSearch) {
     // 1) 第三方注入内容（一点资讯 / yidianzixun 等）—— 明确推广
     if (t === 'webcontent') return true;
 
-    // 2) 推荐/广告位轮播（River 为微软推荐位）
-    if (t === 'slideshow' && BLOCK_SLIDESHOW_RIVER && /river/i.test(o.placement || '')) return true;
-
-    // 3) 带 recoDocMetadata 且跳转到第三方域名
+    // 2) 带 recoDocMetadata 且跳转到第三方域名
     //    注意：Bing 国区文章链接是 www.msn.cn（.cn 后缀），与 msn.com 同为微软一手域名，
     //    白名单必须同时覆盖 .com / .cn，否则会把所有正常文章误删。
     if (o.recoDocMetadata) {
