@@ -272,6 +272,27 @@ function stripJsonAds(text, isNewsFeed, isSearch) {
       }
     }
 
+    // 1.5) 强广告键：只要字段「作为对象键」存在即判定为广告对象。
+    //      注意：这些值通常是对象 / 曝光串，不能用值是否匹配 ad|promo|sponsor 判断，
+    //      故以「键存在」为准。但仅当它们是真正的 JSON 键时生效——
+    //      （例：wpoNativeAdServed 常出现在 URL 查询参数里，那不是键，本规则不会误伤。）
+    //      - bannerImpressionOffer / ImpressionId：广告曝光标记
+    //      - adRef / clickUrl / clickThroughUrl / landingUrl：广告点击 / 归因 / 落地
+    //      - sponsoredBy / advertiser / advertiserId：赞助商 / 广告主
+    const STRONG_AD_KEYS = [
+      'bannerImpressionOffer',
+      'ImpressionId', 'impressionId', 'adRef',
+      'clickUrl', 'clickThroughUrl', 'landingUrl',
+      'sponsoredBy', 'advertiser', 'advertiserId',
+    ];
+    for (let i = 0; i < STRONG_AD_KEYS.length; i++) {
+      if (STRONG_AD_KEYS[i] in o) return true;
+    }
+
+    // 1.6) 推荐流里的 River 原生广告位：recoDocMetadata（推荐模块）+ placement:"River"
+    //      （伪装成 type:"article" 的赞助卡，provider 多为第三方如一点资讯）
+    if (o.recoDocMetadata && /river/i.test(o.placement || '')) return true;
+
     // 1b) v6：Algo / moduleType / cardType / template 等“广告位”标记
     const posMarkers = ['Algo', 'moduleType', 'cardType', 'template', 'placement', 'dataSource'];
     for (let i = 0; i < posMarkers.length; i++) {
@@ -359,8 +380,18 @@ function stripJsonAds(text, isNewsFeed, isSearch) {
           node[k] = [];
         }
       }
+      // 递归；同时删除「本身就是广告对象」的子对象
+      // （广告对象有时不挂在数组里，而是作为某个字段的值，原式只判数组元素会漏）
       for (const k in node) {
-        if (node[k] && typeof node[k] === 'object') clean(node[k]);
+        const v = node[k];
+        if (v && typeof v === 'object') {
+          if (!Array.isArray(v) && isAdObject(v)) {
+            delete node[k];
+            removed++;
+          } else {
+            clean(v);
+          }
+        }
       }
     }
   }
