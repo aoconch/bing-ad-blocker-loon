@@ -23,8 +23,11 @@
     'srtb.msn.com', 'srtb.msn.cn',
     // ② Microsoft 自有广告域
     'msads.net', 'ads.msn.com', 'bingads.microsoft.com', 'ads1.msads.net', 'ads2.msads.net',
-    // ③ 推广 / 奖励平台（含 promotions / limitedTimeOffer / brandId 卡片）
-    'prod.rewardsplatform.microsoft.com',
+    // ③ 推广 / 奖励平台：prod.rewardsplatform.microsoft.com 已从「请求拦截」移除。
+    //    原因：该域的 /dapi/me 是 Bing 奖励积分/进度的数据接口，整域拦截会导致
+    //    奖励中心显示 0/120（实测抓包命中 X-Loon-AdBlock-Req:blocked=1、响应体为 {}）。
+    //    保留奖励的做法：请求阶段放行该域，由 bing_remove_ads.js 的 http-response
+    //    规则在响应里只剔 promotions / limitedTimeOffer / *_Partner 推广卡（见 .plugin [Script]）。
     // ④ 第三方广告 / 追踪联盟（覆盖大多数通用广告）
     'doubleclick.net', 'googlesyndication.com', 'googleadservices.com', 'adservice.google.com',
     'adnxs.com', 'rubiconproject.com', 'pubmatic.com', 'criteo.com', 'criteo.net',

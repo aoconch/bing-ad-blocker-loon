@@ -57,6 +57,9 @@
   // 搜索结果页（bing.com / cn.bing.com 的 search / sapphire 接口）
   const isSearch = /bing\.com/i.test(url) && /(search|sapphire|api\/v1|results|query)/i.test(url);
 
+  // Bing 奖励平台响应：只剔 promotions / limitedTimeOffer / *_Partner 推广卡，保留积分与任务数据
+  const isRewards = /rewardsplatform\.microsoft\.com/i.test(url);
+
   let removed = 0;
   try {
     if (isHTML) {
@@ -85,6 +88,7 @@
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
     (isSearch ? ';search=1' : '') +
+    (isRewards ? ';rewards=1' : '') +
     (isHTML ? ';html=1' : '');
 
   // v6: 每条命中响应都打一行 Loon 日志（含 host），便于确认脚本真在跑、哪个接口还有广告
@@ -92,7 +96,8 @@
     const m = url.match(/^https?:\/\/([^\/]+)/i);
     const host = m ? m[1] : '?';
     console.log('[Bing去广告] v8 OK host=' + host + ' removed=' +
-      (typeof removed !== 'undefined' ? removed : 0) + ' url=' + url.slice(0, 100));
+      (typeof removed !== 'undefined' ? removed : 0) +
+      (isRewards ? ' [奖励]' : '') + ' url=' + url.slice(0, 100));
   } catch (e) {}
 
   $done({ headers: outHeaders, body: body });

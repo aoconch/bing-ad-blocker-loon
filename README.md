@@ -48,7 +48,7 @@ Loon 操作：配置 → 插件 → `+` → 通过 URL 添加 → 粘贴上面�
 3. Loon 通过 URL 添加：`https://cdn.jsdelivr.net/gh/<你>/<仓库>@87d7b85/Bing-AD-Blocker.plugin`
 4. 同上开启 MitM 并信任证书。
 
-> 想保留 Bing 奖励、不拦截 `prod.rewardsplatform.microsoft.com`？编辑 `bing_block_request.js`，把那一行从 `BLOCK_SUFFIXES` 里删掉/注释即可——广告仍会被 `bing_remove_ads.js` 的内联剥离处理。
+> **Bing 奖励默认保留**：`prod.rewardsplatform.microsoft.com` 已不在请求拦截表（不再整域掐断导致 `0/120`），改为在响应阶段由 `bing_remove_ads.js` 只剔 `promotions` / `limitedTimeOffer` / `*_Partner` 推广卡，积分与日常任务数据原样保留。
 
 ## 怎么确认插件真的生效了
 

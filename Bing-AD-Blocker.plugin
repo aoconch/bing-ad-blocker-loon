@@ -39,3 +39,7 @@ request if ${url} ~= /^https?:\/\//i then script("https://raw.githubusercontent.
 response if ${url} ~= /^https?:\/\/([a-z0-9-]+\.)*bing\.com\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(搜索)", timeout=20, requires_body=true
 
 response if ${url} ~= /^https?:\/\/assets\.msn\.com\/service\/(news|graph)\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(信息流)", timeout=20, requires_body=true
+
+# ③ 奖励平台：请求阶段已放行（保留积分/进度数据），这里只剔响应里的推广卡
+#    （promotions / limitedTimeOffer / *_Partner 应用安装卡），不动积分与任务数据。
+response if ${url} ~= /^https?:\/\/prod\.rewardsplatform\.microsoft\.com\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(奖励)", timeout=20, requires_body=true
