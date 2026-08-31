@@ -29,8 +29,6 @@
 https://cdn.jsdelivr.net/gh/aoconch/bing-ad-blocker-loon@9f0582a/Bing-AD-Blocker.plugin
 ```
 
-把 `<COMMIT>` 换成最新 commit 短哈希（见仓库 Commits 页）即可。
-
 Loon 操作：配置 → 插件 → `+` → 通过 URL 添加 → 粘贴上面地址 → 启用。
 若之前装过旧版，先左滑删除旧插件再添加（Loon 插件缓存按 URL 区分，新 URL = 重新拉取）。
 
