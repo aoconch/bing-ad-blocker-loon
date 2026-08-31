@@ -1,34 +1,29 @@
 // ============================================================
-// Bing 去广告脚本 (Loon http-response)  v8
+// Bing 去广告脚本 (Loon http-response)  v10
 // 适用：Microsoft Bing App / Bing 页面
 // 架构：本插件「纯 JS、零 Rule」—— 网络层广告域名由 bing_block_request.js
 //       (http-request) 拦截；本脚本只负责「剔除混在合法响应里的内联广告」：
 //       Bing 首页信息流 / 搜索结果页 / 文章详情页里嵌的广告 JSON 对象与 HTML 容器。
 // 功能：
 //   1. HTML 搜索结果页：移除广告容器（class 含 b_ad / ads / ad-slide 等）
-//   2. HTML "Ad" 角标：找到带 adLabel/ad-label 角标的外层 card 整张删除（v7 关键修复）
+//   2. HTML "Ad" 角标：找到带 adLabel/ad-label 角标、或正文仅为 Ad/广告 的外层 card 整张删除
 //   3. JSON 搜索 / 信息流 API：递归移除被标记为广告的对象与广告专用数组
-//   4. 文章详情页 viewsfullpage：直接删除 region:"river" 整个区块
+//   4. 文章详情页 viewsfullpage：直接删除 region:"river"/"riverdb" 整个区块
 //      （即 UI 里的"为你精选更多内容"，包含 Booking.com 等原生广告卡）
 //   5. 搜索结果推广卡（Booking.com / 携程 等 "Ad" 标签）：识别 isAd / adType /
 //      Algo:"Ads" / moduleType 含 ad|promo / source 为广告网络 等标记并剔除
 //   6. 调试模式：URL 带 ?__debug=1 时，在 Loon 日志打印完整响应结构，便于定位新广告字段
 // 说明：本脚本对静态资源(图片/JS/CSS)直接放行，只处理 HTML / JSON。
 // 自证明：所有处理的响应都会带 X-Loon-AdBlock 响应头，便于抓包验证。
+// v10 变更（2026-08-31 HAR 校准）：
+//   - 国区文章/信息流走 assets.msn.cn（此前只匹配 .com，导致 nativead 整段漏剥）
+//   - 覆盖 /service/MSN/Feed（首页 Feed/me 里的 webcontent / 一点资讯植入）
+//   - JSON：label/adLabel/badge 等字段值为 Ad/广告/推广/Sponsored 时整卡删除
+//   - HTML：正文仅为 Ad/广告/Sponsored 的小标签也按角标处理，回溯删外层 card
+//   - 额外删除 region:"riverdb"
 // v9 变更：
 //   - 文章详情页：直接删除整个 region:"river" 区块（对应 UI 里的"为你精选更多内容"），
 //     不再逐张删里面的 nativead/slideshow 卡，避免 Booking.com 等 Ad 卡残留。
-// v8 变更：
-//   - 配套 bing_block_request.js 把原 [Rule] REJECT 全部迁到 JS，本脚本改为「纯内联剥离」角色。
-//   - 自证明头版本号升到 v8。
-// v7 变更（历史）：
-//   - 修复搜索页"为你精选更多内容"区里 Booking.com Ad 卡片（带 "Ad" 角标）漏删
-//     原 v6 逻辑只删了 adLabel <span> 自身，外层 b_card 未删。v7 通过标签栈回溯
-//     找到包含角标的最外层块级元素（div/section/li/article）整张删除。
-// v6 变更：
-//   - 强化搜索结果推广卡识别（Algo:"Ads" / moduleType / cardType / source 广告网络）
-//   - 新增 HTML 搜索广告容器（b_pag / promo-card / sponsored-card / ad-slot 等）
-//   - 每条命中响应打一行 Loon 日志（含 host，便于确认哪个接口还有广告）
 // ============================================================
 
 (function () {
@@ -51,11 +46,15 @@
 
   const isHTML = /text\/html/i.test(ct);
 
-  // 文章 / 信息流接口（assets.msn.com 的 news feed）：需额外剔除 recoDoc 推广卡
-  const isNewsFeed = /assets\.msn\.com\/service\/news\/feed\//i.test(url);
+  // 文章 / 信息流接口（assets.msn.com / 国区 assets.msn.cn；含 MSN/Feed 首页流）
+  // 需额外剔除 recoDoc / webcontent 推广卡
+  const isNewsFeed =
+    /assets\.msn\.(com|cn)\/service\/news\/feed\//i.test(url) ||
+    /assets\.msn\.(com|cn)\/service\/MSN\/Feed/i.test(url);
 
   // 文章详情页（pageId=sapphireviews = 国区 Bing 文章页）—— cards 列表里 nativead 与 article 交错
-  const isArticleDetail = /assets\.msn\.com\/service\/news\/feed\/pages\/viewsfullpage/i.test(url);
+  const isArticleDetail =
+    /assets\.msn\.(com|cn)\/service\/news\/feed\/pages\/viewsfullpage/i.test(url);
 
   // 搜索结果页（bing.com / cn.bing.com 的 search / sapphire 接口）
   const isSearch = /bing\.com/i.test(url) && /(search|sapphire|api\/v1|results|query)/i.test(url);
@@ -87,18 +86,18 @@
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    ';v=9' +
+    ';v=10' +
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
     (isSearch ? ';search=1' : '') +
     (isRewards ? ';rewards=1' : '') +
     (isHTML ? ';html=1' : '');
 
-  // v6: 每条命中响应都打一行 Loon 日志（含 host），便于确认脚本真在跑、哪个接口还有广告
+  // 每条命中响应都打一行 Loon 日志（含 host），便于确认脚本真在跑、哪个接口还有广告
   try {
     const m = url.match(/^https?:\/\/([^\/]+)/i);
     const host = m ? m[1] : '?';
-    console.log('[Bing去广告] v9 OK host=' + host + ' removed=' +
+    console.log('[Bing去广告] v10 OK host=' + host + ' removed=' +
       (typeof removed !== 'undefined' ? removed : 0) +
       (isRewards ? ' [奖励]' : '') + ' url=' + url.slice(0, 100));
   } catch (e) {}
@@ -122,6 +121,7 @@ function getHeader(headers, name) {
 // HTML：移除 Bing 广告容器
 // v7 关键改进：发现 "Ad" 角标时，沿标签栈往上找外层 card 容器整张删除，
 // 避免 v6 那样只删了角标 <span> 自身、留下外层 b_card 的 bug。
+// v10：除 class 角标外，正文仅为 Ad/广告/Sponsored 的小标签也按角标处理。
 // ------------------------------------------------------------
 function stripHtmlAds(html) {
   if (typeof html !== 'string') return html;
@@ -142,17 +142,23 @@ function stripHtmlAds(html) {
   // —— Pass 2：发现 "Ad" 角标 → 整张外层 card 删除 ——
   // 角标 class 名单（含 Bing 各 UI 变体：搜索结果 / 搜索为你推荐 / 资讯流）
   const badgeClassRe = /<(\w+)([^>]*\bclass="[^"]*\b(adLabel|ad-label|ad-label-text|ad_badge|adBadge|ad-badge|adMarker|ad-marker|b_adlabel|b_adLabel)\b[^"]*"[^>]*)>/gi;
+  // 正文仅为 Ad / 广告 / Sponsored / 赞助 的小标签（UI 可见角标）
+  const badgeTextRe = /<(span|div|p|em|i|label|small|b|strong)\b[^>]*>\s*(?:Ad|AD|广告|推广|Sponsored|SPONSORED|赞助)\s*<\/\1>/gi;
   // 用一个统一的 open/close 正则同时识别开闭标签，遍历到 badge 位置时建立未闭合栈
   const tagRe = /<(\/?)(div|li|section|article)\b[^>]*>/gi;
   // card-like 容器识别（向栈上找最近的这一类整张删）
-  const cardClassRe = /\b(b_card|b_algo|b_entity|b_results|b_algoheader|b_answer)\b/;
+  const cardClassRe = /\b(b_card|b_algo|b_entity|b_results|b_algoheader|b_answer|card|tile|nativead)\b/i;
 
-  // 找出所有角标位置
+  // 找出所有角标位置（class 角标 + 文本角标）
   const badges = [];
   let bm;
   while ((bm = badgeClassRe.exec(out)) !== null) {
     badges.push(bm.index);
   }
+  while ((bm = badgeTextRe.exec(out)) !== null) {
+    badges.push(bm.index);
+  }
+  badges.sort(function (a, b) { return a - b; });
   // 从后往前处理，避免下标偏移
   for (let bi = badges.length - 1; bi >= 0; bi--) {
     const badgePos = badges[bi];
@@ -174,9 +180,7 @@ function stripHtmlAds(html) {
     }
     if (stack.length === 0) continue;
     // 2) 沿栈向上找最近的 card-like 容器
-    //    优先级：class 含 b_card/b_algo/b_entity/b_results/b_algoheader/b_answer
-    //            > article/section
-    //            > 兜底：最内层未闭合 div/li
+    //    优先级：class 含 b_card/b_algo/... > article/section > 兜底最内层
     let target = null;
     for (let si = stack.length - 1; si >= 0; si--) {
       const cand = stack[si];
@@ -284,8 +288,9 @@ function stripJsonAds(text, isNewsFeed, isSearch) {
     return r;
   }
 
-  // 先整段删除 "river" 区块，再递归清理剩余广告对象
+  // 先整段删除 "river" / "riverdb" 区块，再递归清理剩余广告对象
   removed += removeSectionsByRegion(data, 'river');
+  removed += removeSectionsByRegion(data, 'riverdb');
 
   function isAdObject(o) {
     if (!o || typeof o !== 'object') return false;
@@ -295,6 +300,19 @@ function stripJsonAds(text, isNewsFeed, isSearch) {
       const t = o.type.toLowerCase();
       if (t === 'nativead' || t === 'ad' || t === 'sponsored' ||
           t === 'promoted' || /nativead|sponsor|promoted/.test(t)) {
+        return true;
+      }
+    }
+
+    // 1.25) 可见角标字段：label / adLabel / badge 等值为 Ad / 广告 / Sponsored
+    //       （UI 上显示 "Ad" 角标的卡片，即便缺少 type:nativead）
+    const LABEL_KEYS = [
+      'label', 'adLabel', 'adlabel', 'adLabelText', 'badge', 'adBadge',
+      'sponsorLabel', 'sponsoredLabel', 'displayLabel', 'tag', 'tagText',
+    ];
+    for (let i = 0; i < LABEL_KEYS.length; i++) {
+      const lv = o[LABEL_KEYS[i]];
+      if (typeof lv === 'string' && /^(ad|广告|推广|sponsored|赞助)$/i.test(lv.trim())) {
         return true;
       }
     }

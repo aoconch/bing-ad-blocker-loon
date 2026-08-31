@@ -1,12 +1,12 @@
 #!name = Bing 广告屏蔽
-#!desc = 屏蔽 Microsoft Bing App 首页信息流原生广告、RTB 竞价广告与推广/追踪（纯 JS 拦截，零 Rule，基于 2026-08-18 真机抓包校准）
+#!desc = 屏蔽 Microsoft Bing App 首页信息流原生广告、RTB 竞价广告与推广/追踪（纯 JS 拦截，零 Rule，基于 2026-08-31 真机抓包校准，含国区 assets.msn.cn）
 #!author = WorkBuddy
 #!homepage = https://github.com/aoconch/bing-ad-blocker-loon
 #!tag = 去广告, Bing
 #!type = normal
 
 # ============================================================
-# 设计说明（v8 · 纯 JS、零 Rule）
+# 设计说明（v10 · 纯 JS、零 Rule）
 # ------------------------------------------------------------
 # 本插件不再使用任何 [Rule] 域名拦截。所有去广告逻辑都在两个 JS 脚本里：
 #   ① bing_block_request.js  —— http-request：在「请求发出前」按域名后缀
@@ -14,6 +14,7 @@
 #   ② bing_remove_ads.js     —— http-response：剔除混在合法响应里的内联广告
 #       （首页信息流的 {"type":"nativead"} 卡、搜索结果推广卡、文章植入卡）。
 # HTTPS 脚本需要 MitM 才能看到请求/响应，因此下方 [Mitm] 列出了全部需解密的域名。
+# v10：补齐国区 assets.msn.cn / *.msn.cn，以及 MSN/Feed 首页信息流。
 # ============================================================
 
 # ============================================================
@@ -23,7 +24,7 @@
 # 注：透明解密这些域仅影响走 Loon 的流量，不影响其它 App。
 # ============================================================
 [Mitm]
-hostname = bing.com, *.bing.com, *.msn.com, *.msads.net, msads.net, assets.msn.com, srtb.msn.com, srtb.msn.cn, ads.msn.com, bingads.microsoft.com, prod.rewardsplatform.microsoft.com, doubleclick.net, *.doubleclick.net, googlesyndication.com, *.googlesyndication.com, googleadservices.com, *.googleadservices.com, adservice.google.com, adnxs.com, *.adnxs.com, rubiconproject.com, *.rubiconproject.com, pubmatic.com, *.pubmatic.com, criteo.com, *.criteo.com, criteo.net, *.criteo.net, moatads.com, *.moatads.com, spotx.tv, *.spotx.tv, openx.net, *.openx.net, scorecardresearch.com, *.scorecardresearch.com, taboola.com, *.taboola.com, outbrain.com, *.outbrain.com, adform.net, *.adform.net, adroll.com, *.adroll.com, advertising.com, *.advertising.com, adtechus.com, *.adtechus.com, adsrvr.org, *.adsrvr.org, bounceexchange.com, *.bounceexchange.com, rfihub.com, *.rfihub.com, crwdcntrl.net, *.crwdcntrl.net, adsystem.com, *.adsystem.com, adservice.com, *.adservice.com, analytics.adjust.io, *.analytics.adjust.io, analytics.adjust.com, *.analytics.adjust.com, self.events.data.microsoft.com, gateway.bingviz.microsoftapp.net, firebase-settings.crashlytics.com, firebaselogging-pa.googleapis.com, yidianzixun.com, *.yidianzixun.com, go2yd.com, doris.yidianzixun.com
+hostname = bing.com, *.bing.com, *.msn.com, *.msn.cn, msn.cn, assets.msn.com, assets.msn.cn, www.msn.cn, srtb.msn.com, srtb.msn.cn, ads.msn.com, *.msads.net, msads.net, bingads.microsoft.com, prod.rewardsplatform.microsoft.com, doubleclick.net, *.doubleclick.net, googlesyndication.com, *.googlesyndication.com, googleadservices.com, *.googleadservices.com, adservice.google.com, adnxs.com, *.adnxs.com, rubiconproject.com, *.rubiconproject.com, pubmatic.com, *.pubmatic.com, criteo.com, *.criteo.com, criteo.net, *.criteo.net, moatads.com, *.moatads.com, spotx.tv, *.spotx.tv, openx.net, *.openx.net, scorecardresearch.com, *.scorecardresearch.com, taboola.com, *.taboola.com, outbrain.com, *.outbrain.com, adform.net, *.adform.net, adroll.com, *.adroll.com, advertising.com, *.advertising.com, adtechus.com, *.adtechus.com, adsrvr.org, *.adsrvr.org, bounceexchange.com, *.bounceexchange.com, rfihub.com, *.rfihub.com, crwdcntrl.net, *.crwdcntrl.net, adsystem.com, *.adsystem.com, adservice.com, *.adservice.com, analytics.adjust.io, *.analytics.adjust.io, analytics.adjust.com, *.analytics.adjust.com, self.events.data.microsoft.com, gateway.bingviz.microsoftapp.net, firebase-settings.crashlytics.com, firebaselogging-pa.googleapis.com, yidianzixun.com, *.yidianzixun.com, go2yd.com, doris.yidianzixun.com
 
 # ============================================================
 # [Script]  v2 语法（Loon 3.5.1 983+）
@@ -38,7 +39,11 @@ request if ${url} ~= /^https?:\/\//i then script("https://raw.githubusercontent.
 #    每个 response 规则都带 URL Guard（命中必要条件），符合 v2 语法要求。
 response if ${url} ~= /^https?:\/\/([a-z0-9-]+\.)*bing\.com\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(搜索)", timeout=20, requires_body=true
 
-response if ${url} ~= /^https?:\/\/assets\.msn\.com\/service\/(news|graph)\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(信息流)", timeout=20, requires_body=true
+# 国区走 assets.msn.cn；国际站 assets.msn.com。同时覆盖 news/graph 与 MSN/Feed 首页流。
+response if ${url} ~= /^https?:\/\/assets\.msn\.(com|cn)\/service\/(news|graph|MSN)\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(信息流)", timeout=20, requires_body=true
+
+# 文章详情页 HTML（www.msn.cn / www.msn.com）里也可能嵌 Ad 角标容器
+response if ${url} ~= /^https?:\/\/(www\.)?msn\.(com|cn)\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(MSN页)", timeout=20, requires_body=true
 
 # ③ 奖励平台：请求阶段已放行（保留积分/进度数据），这里只剔响应里的推广卡
 #    （promotions / limitedTimeOffer / *_Partner 应用安装卡），不动积分与任务数据。
