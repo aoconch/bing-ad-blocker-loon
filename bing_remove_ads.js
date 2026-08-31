@@ -1,5 +1,5 @@
 // ============================================================
-// Bing 去广告脚本 (Loon http-response)  v11
+// Bing 去广告脚本 (Loon http-response)  v12
 // 适用：Microsoft Bing App / Bing 页面
 // 架构：本插件「纯 JS、零 Rule」—— 网络层广告域名由 bing_block_request.js
 //       (http-request) 拦截；本脚本只负责「剔除混在合法响应里的内联广告」：
@@ -15,13 +15,12 @@
 //   7. 调试模式：URL 带 ?__debug=1 时，在 Loon 日志打印完整响应结构
 // 说明：本脚本对静态资源(图片/JS/CSS)直接放行，只处理 HTML / JSON。
 // 自证明：所有处理的响应都会带 X-Loon-AdBlock 响应头，便于抓包验证。
-// v11 变更（2026-08-31 HAR #289 校准）：
-//   - 根因：feed 里 nativead/river 已删，但 AppConfig 仍下发文内/插页广告位，
-//     客户端照样渲染 "Ad" 区域（srtb 被拦后变成空广告框）。
-//   - 新增 stripAppConfigAds：针对性清空广告位配置键，不再对 config 跑激进 isAdObject。
-//   - 新增 stripRewardsAds：奖励接口走保守路径，保证积分/兑换/订单可用。
-//   - 额外删除 region: inarticle / interstitialgallery / rectangle / sliver。
-// v10 变更：国区 assets.msn.cn + MSN/Feed + Ad 角标识别。
+// v12 变更（2026-08-31 HAR #290）：
+//   - Booking.com Ad 仍可见：AppConfig 中 enableIntraArDefAd 等开关仍为 true，
+//     客户端广告 JS（ads-utils）据此渲染文内默认广告。
+//   - stripAppConfigAds：强制关闭广告 featureFlags，删除 AboveRiverBlock，
+//     forceDisableAds=true；请求侧拦截 ads-utils / booking.com 素材域。
+// v11：清空广告位配置 + Rewards 保守剥离。
 // ============================================================
 
 (function () {
@@ -101,7 +100,7 @@
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    ';v=11' +
+    ';v=12' +
     (mode ? ';mode=' + mode : '') +
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
@@ -113,7 +112,7 @@
   try {
     const m = url.match(/^https?:\/\/([^\/]+)/i);
     const host = m ? m[1] : '?';
-    console.log('[Bing去广告] v11 OK host=' + host + ' mode=' + mode + ' removed=' +
+    console.log('[Bing去广告] v12 OK host=' + host + ' mode=' + mode + ' removed=' +
       (typeof removed !== 'undefined' ? removed : 0) +
       (isRewards ? ' [奖励保守]' : '') + ' url=' + url.slice(0, 100));
   } catch (e) {}
@@ -203,10 +202,9 @@ function stripRewardsAds(text) {
 }
 
 // ------------------------------------------------------------
-// AppConfig：清空广告位配置，阻止客户端创建 "Ad" 占位区域
-// 2026-08-31 HAR：srtb 已被拦，但 config 仍下发：
-//   slots.intraArticleNativeAd / interstitialNativeAds / nativeAdLoadingRules
-// 客户端据此画出带 Ad 角标的空框。
+// AppConfig：清空广告位 + 强制关闭广告 featureFlags
+// HAR #290：slots 已清空，但 enableIntraArDefAd=true 等开关仍让客户端
+// 渲染文内默认 Ad（用户可见 Booking.com + Ad 角标）。
 // ------------------------------------------------------------
 function stripAppConfigAds(text) {
   let data;
@@ -218,9 +216,13 @@ function stripAppConfigAds(text) {
 
   let removed = 0;
 
-  // 这些键对应广告位 / 原生广告加载规则，整组清空或置 null
   const CLEAR_ARRAY_KEYS = /^(interstitialNativeAds|nativeAdLoadingRules|riverVideoAdsProperties)$/i;
-  const NULL_OBJECT_KEYS = /^(intraArticleNativeAd|bannerAd|nativeAd|nativeAdConfig|nativeAdWC|nativeAdConfigs|adServiceConfig|displayAds|displayAd)$/i;
+  const NULL_OBJECT_KEYS = /^(intraArticleNativeAd|bannerAd|nativeAd|nativeAdConfig|nativeAdWC|nativeAdConfigs|adServiceConfig|displayAds|displayAd|inStreamVideoAd)$/i;
+
+  // 广告相关布尔开关：一律关。forceDisableAds 一律开。
+  // 用 (?![a-z]) 避免误伤 enableAddNavHistory（Add≠Ad）。
+  const AD_FLAG_OFF = /(?:^|[A-Z]|_)(?:enable|show|should|use|pass|form|is|has)?(?:.*)?(?:Ads?|BannerAd|NativeAd|Xandr|InfopaneAd|DspAd|IntraAr|InarAd|galleryFullAd|AdSlug|AdShimmer|AdCoords|AdThumbnail|AdFeedback|AdChoice|AdOcid|OutOfViewAd|inStreamVideoAd|delayInfopane|StickyBanner|ResponsiveAd)(?:[A-Z].*)?$/i;
+  const AD_FLAG_OFF_SIMPLE = /Ad(?![a-z])|Ads|Xandr|InfopaneAd|DspAd|IntraAr|InarAd|galleryFullAd|NativeKvp|delayInfopane/i;
 
   function isNativeAdRef(obj) {
     if (!obj || typeof obj !== 'object') return false;
@@ -229,7 +231,20 @@ function stripAppConfigAds(text) {
       (obj.configRef && obj.configRef.experienceType) ||
       ''
     );
-    return /ViewsNativeAd|NativeAdWC|NativeAd|BannerAd|DisplayAds/i.test(exp);
+    return /ViewsNativeAd|NativeAdWC|NativeAd|BannerAd|DisplayAds|AboveRiverBlock/i.test(exp);
+  }
+
+  function shouldForceOffFlag(key) {
+    if (/forceDisableAds/i.test(key)) return false; // 单独处理为 true
+    // 白名单：含 Ad 但不是广告开关
+    if (/enableAdd|AddNav|NativeShare|NativeLink|Native2Video|shouldUseNewHeader|readTime|LoadingState|Masthead|ContinueRead/i.test(key)) {
+      // 但仍要关掉明确广告项
+      if (/IntraAr|InarAd|BannerAd|StickyBanner|galleryFullAd|DspAd|Xandr|InfopaneAd|AdFeedback|AdShimmer|AdSlug|AdCoords|AdThumbnail|AdOcid|OutOfViewAd|inStreamVideoAd|delayInfopane|forceDisable|enableAd(?![a-z])/i.test(key)) {
+        return true;
+      }
+      return false;
+    }
+    return AD_FLAG_OFF_SIMPLE.test(key);
   }
 
   function clean(node) {
@@ -244,10 +259,9 @@ function stripAppConfigAds(text) {
         clean(item);
       }
     } else if (node && typeof node === 'object') {
-      // configs 顶层：直接干掉 ViewsNativeAd / NativeAdWC / DisplayAdsWC 整棵配置树
       if (node.configs && typeof node.configs === 'object') {
         for (const ck in node.configs) {
-          if (/ViewsNativeAd|NativeAdWC|DisplayAdsWC/i.test(ck)) {
+          if (/ViewsNativeAd|NativeAdWC|DisplayAdsWC|AboveRiverBlock/i.test(ck)) {
             delete node.configs[ck];
             removed++;
           }
@@ -255,38 +269,57 @@ function stripAppConfigAds(text) {
       }
 
       for (const k in node) {
-        if (CLEAR_ARRAY_KEYS.test(k) && Array.isArray(node[k])) {
-          if (node[k].length) {
-            removed += node[k].length;
+        const v = node[k];
+
+        // 布尔广告开关
+        if (typeof v === 'boolean') {
+          if (/forceDisableAds/i.test(k)) {
+            if (v !== true) { node[k] = true; removed++; }
+            continue;
+          }
+          if (v === true && shouldForceOffFlag(k)) {
+            node[k] = false;
+            removed++;
+            continue;
+          }
+        }
+
+        if (CLEAR_ARRAY_KEYS.test(k) && Array.isArray(v)) {
+          if (v.length) {
+            removed += v.length;
             node[k] = [];
           }
           continue;
         }
-        if (NULL_OBJECT_KEYS.test(k) && node[k] != null) {
+        if (NULL_OBJECT_KEYS.test(k) && v != null) {
           node[k] = null;
           removed++;
           continue;
         }
-        // slots / childExperienceReferencesWC 内的广告位引用
         if ((k === 'slots' || k === 'childExperienceReferencesWC' || k === 'nativeAdConfigs') &&
-            node[k] && typeof node[k] === 'object') {
-          const bag = node[k];
-          for (const sk in bag) {
+            v && typeof v === 'object') {
+          for (const sk in v) {
             if (NULL_OBJECT_KEYS.test(sk) || /nativead|bannerad|displayad/i.test(sk)) {
-              if (bag[sk] != null) {
-                bag[sk] = null;
-                removed++;
-              }
-            } else if (isNativeAdRef(bag[sk])) {
-              bag[sk] = null;
+              if (v[sk] != null) { v[sk] = null; removed++; }
+            } else if (isNativeAdRef(v[sk])) {
+              v[sk] = null;
               removed++;
             }
           }
         }
-        if (isNativeAdRef(node[k])) {
+        if (isNativeAdRef(v)) {
           node[k] = null;
           removed++;
           continue;
+        }
+        // 赞助内容文案块（AboveRiver 标题等）
+        if (k === 'localizedStrings' && v && typeof v === 'object') {
+          if (typeof v.title === 'string' && /赞助|广告|sponsored/i.test(v.title)) {
+            v.title = '';
+            removed++;
+          }
+          if (typeof v.advertisement === 'string') { v.advertisement = ''; removed++; }
+          if (typeof v.adLabel === 'string') { v.adLabel = ''; removed++; }
         }
         clean(node[k]);
       }
@@ -294,7 +327,7 @@ function stripAppConfigAds(text) {
   }
 
   clean(data);
-  console.log('[Bing去广告][Config] 已清空广告位数=' + removed);
+  console.log('[Bing去广告][Config] 已清空广告位/关闭开关数=' + removed);
   return { body: JSON.stringify(data), removed: removed };
 }
 

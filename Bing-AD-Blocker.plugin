@@ -1,5 +1,5 @@
 #!name = Bing 广告屏蔽
-#!desc = 屏蔽 Microsoft Bing App 首页信息流原生广告、RTB 竞价广告与推广/追踪（纯 JS 拦截，零 Rule；v11 清空 AppConfig 广告位并保守保留 Bing Rewards）
+#!desc = 屏蔽 Microsoft Bing App 广告（v12：关闭 enableIntraArDefAd 等开关 + 拦截 ads-utils/Booking 素材；Rewards 保守保留）
 #!author = WorkBuddy
 #!homepage = https://github.com/aoconch/bing-ad-blocker-loon
 #!tag = 去广告, Bing
@@ -14,14 +14,14 @@
 #   ② bing_remove_ads.js     —— http-response：剔除混在合法响应里的内联广告
 #       （nativead 卡、AppConfig 广告位、搜索推广卡）；Rewards 走保守剥离。
 # HTTPS 脚本需要 MitM 才能看到请求/响应，因此下方 [Mitm] 列出了全部需解密的域名。
-# v11：清空 AppConfig 文内/插页广告位（否则客户端仍画 Ad 框）；Rewards 独立保守路径。
+# v12：关闭 AppConfig 广告开关；拦截 ads-utils JS 与 booking.com 素材域；Rewards 保守剥离。
 # ============================================================
 
 # ============================================================
 # [Mitm] 需要解密 HTTPS 的域名
 # ============================================================
 [Mitm]
-hostname = bing.com, *.bing.com, *.msn.com, *.msn.cn, msn.cn, assets.msn.com, assets.msn.cn, www.msn.com, www.msn.cn, srtb.msn.com, srtb.msn.cn, ads.msn.com, *.msads.net, msads.net, bingads.microsoft.com, prod.rewardsplatform.microsoft.com, doubleclick.net, *.doubleclick.net, googlesyndication.com, *.googlesyndication.com, googleadservices.com, *.googleadservices.com, adservice.google.com, adnxs.com, *.adnxs.com, rubiconproject.com, *.rubiconproject.com, pubmatic.com, *.pubmatic.com, criteo.com, *.criteo.com, criteo.net, *.criteo.net, moatads.com, *.moatads.com, spotx.tv, *.spotx.tv, openx.net, *.openx.net, scorecardresearch.com, *.scorecardresearch.com, taboola.com, *.taboola.com, outbrain.com, *.outbrain.com, adform.net, *.adform.net, adroll.com, *.adroll.com, advertising.com, *.advertising.com, adtechus.com, *.adtechus.com, adsrvr.org, *.adsrvr.org, bounceexchange.com, *.bounceexchange.com, rfihub.com, *.rfihub.com, crwdcntrl.net, *.crwdcntrl.net, adsystem.com, *.adsystem.com, adservice.com, *.adservice.com, analytics.adjust.io, *.analytics.adjust.io, analytics.adjust.com, *.analytics.adjust.com, self.events.data.microsoft.com, gateway.bingviz.microsoftapp.net, firebase-settings.crashlytics.com, firebaselogging-pa.googleapis.com, yidianzixun.com, *.yidianzixun.com, go2yd.com, doris.yidianzixun.com
+hostname = bing.com, *.bing.com, *.msn.com, *.msn.cn, msn.cn, assets.msn.com, assets.msn.cn, www.msn.com, www.msn.cn, srtb.msn.com, srtb.msn.cn, ads.msn.com, *.msads.net, msads.net, bingads.microsoft.com, prod.rewardsplatform.microsoft.com, booking.com, *.booking.com, bstatic.com, *.bstatic.com, ctrip.com, *.ctrip.com, trip.com, *.trip.com, doubleclick.net, *.doubleclick.net, googlesyndication.com, *.googlesyndication.com, googleadservices.com, *.googleadservices.com, adservice.google.com, adnxs.com, *.adnxs.com, rubiconproject.com, *.rubiconproject.com, pubmatic.com, *.pubmatic.com, criteo.com, *.criteo.com, criteo.net, *.criteo.net, moatads.com, *.moatads.com, spotx.tv, *.spotx.tv, openx.net, *.openx.net, scorecardresearch.com, *.scorecardresearch.com, taboola.com, *.taboola.com, outbrain.com, *.outbrain.com, adform.net, *.adform.net, adroll.com, *.adroll.com, advertising.com, *.advertising.com, adtechus.com, *.adtechus.com, adsrvr.org, *.adsrvr.org, bounceexchange.com, *.bounceexchange.com, rfihub.com, *.rfihub.com, crwdcntrl.net, *.crwdcntrl.net, adsystem.com, *.adsystem.com, adservice.com, *.adservice.com, analytics.adjust.io, *.analytics.adjust.io, analytics.adjust.com, *.analytics.adjust.com, self.events.data.microsoft.com, gateway.bingviz.microsoftapp.net, firebase-settings.crashlytics.com, firebaselogging-pa.googleapis.com, yidianzixun.com, *.yidianzixun.com, go2yd.com, doris.yidianzixun.com
 
 # ============================================================
 # [Script]  v2 语法（Loon 3.5.1 983+）
