@@ -1,5 +1,5 @@
 // ============================================================
-// Bing 去广告脚本 (Loon http-response)  v12
+// Bing 去广告脚本 (Loon http-response)  v13
 // 适用：Microsoft Bing App / Bing 页面
 // 架构：本插件「纯 JS、零 Rule」—— 网络层广告域名由 bing_block_request.js
 //       (http-request) 拦截；本脚本只负责「剔除混在合法响应里的内联广告」：
@@ -15,12 +15,11 @@
 //   7. 调试模式：URL 带 ?__debug=1 时，在 Loon 日志打印完整响应结构
 // 说明：本脚本对静态资源(图片/JS/CSS)直接放行，只处理 HTML / JSON。
 // 自证明：所有处理的响应都会带 X-Loon-AdBlock 响应头，便于抓包验证。
-// v12 变更（2026-08-31 HAR #290）：
-//   - Booking.com Ad 仍可见：AppConfig 中 enableIntraArDefAd 等开关仍为 true，
-//     客户端广告 JS（ads-utils）据此渲染文内默认广告。
-//   - stripAppConfigAds：强制关闭广告 featureFlags，删除 AboveRiverBlock，
-//     forceDisableAds=true；请求侧拦截 ads-utils / booking.com 素材域。
-// v11：清空广告位配置 + Rewards 保守剥离。
+// v13 变更（2026-09-01 HAR #292）：
+//   - Rewards 不可用根因：请求脚本匹配全部 https://，并发下 Script evaluate timeout，
+//     登录/bingapiauth/odc 认证失败，rewardsplatform 请求根本发不出去。
+//   - .plugin 收窄请求 URL Guard；请求脚本对登录/Rewards 域硬放行。
+// v12：关闭文内广告开关 + 拦截 ads-utils/Booking。
 // ============================================================
 
 (function () {
@@ -100,7 +99,7 @@
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    ';v=12' +
+    ';v=13' +
     (mode ? ';mode=' + mode : '') +
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
@@ -112,7 +111,7 @@
   try {
     const m = url.match(/^https?:\/\/([^\/]+)/i);
     const host = m ? m[1] : '?';
-    console.log('[Bing去广告] v12 OK host=' + host + ' mode=' + mode + ' removed=' +
+    console.log('[Bing去广告] v13 OK host=' + host + ' mode=' + mode + ' removed=' +
       (typeof removed !== 'undefined' ? removed : 0) +
       (isRewards ? ' [奖励保守]' : '') + ' url=' + url.slice(0, 100));
   } catch (e) {}

@@ -1,24 +1,25 @@
 #!name = Bing 广告屏蔽
-#!desc = 屏蔽 Microsoft Bing App 广告（v12：关闭 enableIntraArDefAd 等开关 + 拦截 ads-utils/Booking 素材；Rewards 保守保留）
+#!desc = 屏蔽 Microsoft Bing App 广告（v13：请求脚本仅匹配广告域，避免登录/Rewards 超时；Rewards 保守保留）
 #!author = WorkBuddy
 #!homepage = https://github.com/aoconch/bing-ad-blocker-loon
 #!tag = 去广告, Bing
 #!type = normal
 
 # ============================================================
-# 设计说明（v11 · 纯 JS、零 Rule）
+# 设计说明（v13 · 纯 JS、零 Rule）
 # ------------------------------------------------------------
-# 本插件不再使用任何 [Rule] 域名拦截。所有去广告逻辑都在两个 JS 脚本里：
-#   ① bing_block_request.js  —— http-request：在「请求发出前」按域名后缀
-#       拦截广告 / 竞价 / 追踪请求（等价于原 DOMAIN-SUFFIX,REJECT）。
-#   ② bing_remove_ads.js     —— http-response：剔除混在合法响应里的内联广告
-#       （nativead 卡、AppConfig 广告位、搜索推广卡）；Rewards 走保守剥离。
-# HTTPS 脚本需要 MitM 才能看到请求/响应，因此下方 [Mitm] 列出了全部需解密的域名。
-# v12：关闭 AppConfig 广告开关；拦截 ads-utils JS 与 booking.com 素材域；Rewards 保守剥离。
+# ① bing_block_request.js —— http-request：只匹配广告/竞价/追踪域名
+#    【重要】绝不能用 /^https?:\/\// 匹配全部请求！
+#    HAR #292：全量匹配导致 Script evaluate timeout，登录/认证失败，
+#    Rewards 接口根本发不出去。
+# ② bing_remove_ads.js —— http-response：剥内联广告；Rewards 走保守路径。
+# v13：收窄请求脚本 URL Guard，恢复 Bing 登录与 Rewards。
 # ============================================================
 
 # ============================================================
 # [Mitm] 需要解密 HTTPS 的域名
+# 注意：不要 MitM login.microsoftonline.com / odc.officeapps.live.com /
+#       bingapiauth.* —— 这些是登录认证，MitM+脚本容易搞挂 Rewards。
 # ============================================================
 [Mitm]
 hostname = bing.com, *.bing.com, *.msn.com, *.msn.cn, msn.cn, assets.msn.com, assets.msn.cn, www.msn.com, www.msn.cn, srtb.msn.com, srtb.msn.cn, ads.msn.com, *.msads.net, msads.net, bingads.microsoft.com, prod.rewardsplatform.microsoft.com, booking.com, *.booking.com, bstatic.com, *.bstatic.com, ctrip.com, *.ctrip.com, trip.com, *.trip.com, doubleclick.net, *.doubleclick.net, googlesyndication.com, *.googlesyndication.com, googleadservices.com, *.googleadservices.com, adservice.google.com, adnxs.com, *.adnxs.com, rubiconproject.com, *.rubiconproject.com, pubmatic.com, *.pubmatic.com, criteo.com, *.criteo.com, criteo.net, *.criteo.net, moatads.com, *.moatads.com, spotx.tv, *.spotx.tv, openx.net, *.openx.net, scorecardresearch.com, *.scorecardresearch.com, taboola.com, *.taboola.com, outbrain.com, *.outbrain.com, adform.net, *.adform.net, adroll.com, *.adroll.com, advertising.com, *.advertising.com, adtechus.com, *.adtechus.com, adsrvr.org, *.adsrvr.org, bounceexchange.com, *.bounceexchange.com, rfihub.com, *.rfihub.com, crwdcntrl.net, *.crwdcntrl.net, adsystem.com, *.adsystem.com, adservice.com, *.adservice.com, analytics.adjust.io, *.analytics.adjust.io, analytics.adjust.com, *.analytics.adjust.com, self.events.data.microsoft.com, gateway.bingviz.microsoftapp.net, firebase-settings.crashlytics.com, firebaselogging-pa.googleapis.com, yidianzixun.com, *.yidianzixun.com, go2yd.com, doris.yidianzixun.com
@@ -27,20 +28,21 @@ hostname = bing.com, *.bing.com, *.msn.com, *.msn.cn, msn.cn, assets.msn.com, as
 # [Script]  v2 语法（Loon 3.5.1 983+）
 # ============================================================
 [Script]
-# ① 请求阶段：按域名后缀拦截广告 / 竞价 / 追踪（替代原 [Rule] REJECT）
-request if ${url} ~= /^https?:\/\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_block_request.js") with tag="Bing去广告(请求拦截)", timeout=10
+# ① 请求阶段：只拦截广告/竞价/追踪域名（禁止匹配全部 https://）
+#    登录域、Rewards、Office 联邦认证一律不进此脚本。
+request if ${url} ~= /^https?:\/\/([^\/]*\.)?(srtb\.msn\.(com|cn)|msads\.net|ads\.msn\.com|bingads\.microsoft\.com|doubleclick\.net|googlesyndication\.com|googleadservices\.com|adservice\.google\.com|adnxs\.com|rubiconproject\.com|pubmatic\.com|criteo\.(com|net)|moatads\.com|spotx\.tv|openx\.net|scorecardresearch\.com|taboola\.com|outbrain\.com|adform\.net|adroll\.com|advertising\.com|adtechus\.com|adsrvr\.org|bounceexchange\.com|rfihub\.com|crwdcntrl\.net|adsystem\.com|adservice\.com|analytics\.adjust\.(io|com)|self\.events\.data\.microsoft\.com|gateway\.bingviz\.microsoftapp\.net|firebase-settings\.crashlytics\.com|firebaselogging-pa\.googleapis\.com|yidianzixun\.com|go2yd\.com|doris\.yidianzixun\.com|booking\.com|bstatic\.com|ctrip\.com|trip\.com)\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_block_request.js") with tag="Bing去广告(请求拦截)", timeout=5
+
+# ①b MSN 域名下的广告 JS chunk（ads-utils 等），不匹配普通内容接口
+request if ${url} ~= /^https?:\/\/([^\/]*\.)?msn\.(com|cn)\/.*?(ads-utils|libs_ads|DisplayAds|nativead|ad-plugin|xandr)/i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_block_request.js") with tag="Bing去广告(广告JS)", timeout=5
 
 # ② 响应阶段：剔除首页信息流 / 搜索结果 / 文章页里内联的广告
 response if ${url} ~= /^https?:\/\/([a-z0-9-]+\.)*bing\.com\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(搜索)", timeout=20, requires_body=true
 
-# 国区走 assets.msn.cn；国际站 assets.msn.com。同时覆盖 news/graph 与 MSN/Feed 首页流。
 response if ${url} ~= /^https?:\/\/assets\.msn\.(com|cn)\/service\/(news|graph|MSN)\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(信息流)", timeout=20, requires_body=true
 
-# AppConfig：清空文内/插页广告位，阻止客户端创建 Ad 占位框（www / assets 均可能下发）
 response if ${url} ~= /^https?:\/\/(www\.|assets\.)?msn\.(com|cn)\/(resolver\/api\/resolve|pcs\/api)\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(AppConfig)", timeout=20, requires_body=true
 
-# 文章详情页 HTML（www.msn.cn / www.msn.com 的 /zh-cn/ 等本地化路径）
 response if ${url} ~= /^https?:\/\/(www\.)?msn\.(com|cn)\/[a-z]{2}-[a-z]{2}\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(MSN页)", timeout=20, requires_body=true
 
-# ③ 奖励平台：请求阶段已放行；响应阶段走保守剥离（只剔 promotions / *_Partner，保留积分/兑换）
+# ③ 奖励平台：请求阶段完全不碰；响应只剔 promotions / *_Partner，保留积分/兑换/任务
 response if ${url} ~= /^https?:\/\/prod\.rewardsplatform\.microsoft\.com\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(奖励)", timeout=20, requires_body=true
