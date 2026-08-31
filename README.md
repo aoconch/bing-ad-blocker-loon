@@ -26,7 +26,7 @@
 **推荐：commit 固定地址（不走 CDN 缓存，永远拿到确切版本）**
 
 ```
-https://cdn.jsdelivr.net/gh/aoconch/bing-ad-blocker-loon@<COMMIT>/Bing-AD-Blocker.plugin
+https://cdn.jsdelivr.net/gh/aoconch/bing-ad-blocker-loon@9f0582a/Bing-AD-Blocker.plugin
 ```
 
 把 `<COMMIT>` 换成最新 commit 短哈希（见仓库 Commits 页）即可。
@@ -34,7 +34,7 @@ https://cdn.jsdelivr.net/gh/aoconch/bing-ad-blocker-loon@<COMMIT>/Bing-AD-Blocke
 Loon 操作：配置 → 插件 → `+` → 通过 URL 添加 → 粘贴上面地址 → 启用。
 若之前装过旧版，先左滑删除旧插件再添加（Loon 插件缓存按 URL 区分，新 URL = 重新拉取）。
 
-之后每次插件更新，把 URL 中的 `@<COMMIT>` 换成最新 commit 短哈希即可强制刷新。
+之后每次插件更新，把 URL 中的 `@9f0582a` 换成最新 commit 短哈希即可强制刷新。
 
 备用地址（raw.githubusercontent，需要代理可直连 GitHub）：
 `https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/Bing-AD-Blocker.plugin`
@@ -47,7 +47,7 @@ Loon 操作：配置 → 插件 → `+` → 通过 URL 添加 → 粘贴上面�
 
 1. 把本仓库推到 GitHub（任意公开仓库）。
 2. 编辑 `Bing-AD-Blocker.plugin`，把两处 `script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/...")` 换成你自己的脚本地址（建议同样用 raw.githubusercontent）。
-3. Loon 通过 URL 添加：`https://cdn.jsdelivr.net/gh/<你>/<仓库>@<COMMIT>/Bing-AD-Blocker.plugin`
+3. Loon 通过 URL 添加：`https://cdn.jsdelivr.net/gh/<你>/<仓库>@9f0582a/Bing-AD-Blocker.plugin`
 4. 同上开启 MitM 并信任证书。
 
 > **Bing 奖励默认保留**：`prod.rewardsplatform.microsoft.com` 已不在请求拦截表（不再整域掐断导致 `0/120`），改为在响应阶段由 `bing_remove_ads.js` 只剔 `promotions` / `limitedTimeOffer` / `*_Partner` 推广卡，积分与日常任务数据原样保留。
