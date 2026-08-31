@@ -4,7 +4,7 @@
 
 **v8 起改为「纯 JS、零 Rule」**：不再依赖 Loon 的 `[Rule]` 域名拦截，所有去广告逻辑都在两个 JS 脚本里完成。
 
-**v10**：补齐国区 `assets.msn.cn`、首页 `MSN/Feed`，并用 JS 移除带 `Ad` / `广告` 角标的广告区域。
+**v11**：清空 AppConfig 文内/插页广告位（杜绝空 Ad 框）；Rewards 走保守剥离，保证积分/兑换正常。
 
 ## 原理（两个脚本各司其职）
 
@@ -53,7 +53,7 @@ Loon 操作：配置 → 插件 → `+` → 通过 URL 添加 → 粘贴上面�
 ## 怎么确认插件真的生效了
 
 - **请求拦截**：被拦的广告/追踪请求，抓包会看到来自 Loon 的 `200` 空响应，且带响应头 `X-Loon-AdBlock-Req: blocked=1`；Loon 日志出现 `[Bing去广告-请求] block=<host>`。
-- **内联剥离**：脚本会给每条被处理的响应打上响应头 **`X-Loon-AdBlock: removed=N;v=10`**（N=本响应移除的广告条目数）。
+- **内联剥离**：脚本会给每条被处理的响应打上响应头 **`X-Loon-AdBlock: removed=N;v=11`**（N=本响应移除的广告条目数）。
   - 下次抓包 / 看 Loon 日志，只要出现这个头，就说明插件脚本确实跑起来了；
   - `removed=0` 表示这条响应本就没有广告。
   - 国区文章页应能看到 `assets.msn.cn` 的响应也带 `X-Loon-AdBlock`。
@@ -67,16 +67,16 @@ Loon 操作：配置 → 插件 → `+` → 通过 URL 添加 → 粘贴上面�
 
 ### 症状：插件显示"已加载"但仍然有广告
 
-99% 是 **Loon 缓存了旧 plugin** 或 **CDN 缓存了旧脚本**。表现：`X-Loon-AdBlock` 头里是 `v=8`/`v=9` 而不是 `v=10`。
+99% 是 **Loon 缓存了旧 plugin** 或 **CDN 缓存了旧脚本**。表现：`X-Loon-AdBlock` 头里是 `v=9`/`v=10` 而不是 `v=11`。
 
 #### A. 强制刷新插件（推荐）
 
 Loon 的插件缓存与 URL 一一对应。换一个新的 URL（新的 commit 哈希）即可让 Loon 当作新插件重拉——最简单的办法就是用 commit 固定地址（见上文"安装"），每次更新换哈希。
 
-#### B. 自查 v10 标志
+#### B. 自查 v11 标志
 
-新版响应头应包含 `X-Loon-AdBlock: ...;v=10`；
-新版 Loon 日志应包含 `[Bing去广告] v10 OK host=... removed=N` 与 `[Bing去广告-请求] block=<host>`。
+新版响应头应包含 `X-Loon-AdBlock: ...;v=11`；
+新版 Loon 日志应包含 `[Bing去广告] v11 OK host=... removed=N` 与 `[Bing去广告-请求] block=<host>`。
 
 如果响应头是旧版本号或无版本号 → 插件是旧版，重新做 A。
 

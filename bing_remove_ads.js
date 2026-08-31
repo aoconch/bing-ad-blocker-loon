@@ -1,5 +1,5 @@
 // ============================================================
-// Bing 去广告脚本 (Loon http-response)  v10
+// Bing 去广告脚本 (Loon http-response)  v11
 // 适用：Microsoft Bing App / Bing 页面
 // 架构：本插件「纯 JS、零 Rule」—— 网络层广告域名由 bing_block_request.js
 //       (http-request) 拦截；本脚本只负责「剔除混在合法响应里的内联广告」：
@@ -8,22 +8,20 @@
 //   1. HTML 搜索结果页：移除广告容器（class 含 b_ad / ads / ad-slide 等）
 //   2. HTML "Ad" 角标：找到带 adLabel/ad-label 角标、或正文仅为 Ad/广告 的外层 card 整张删除
 //   3. JSON 搜索 / 信息流 API：递归移除被标记为广告的对象与广告专用数组
-//   4. 文章详情页 viewsfullpage：直接删除 region:"river"/"riverdb" 整个区块
-//      （即 UI 里的"为你精选更多内容"，包含 Booking.com 等原生广告卡）
-//   5. 搜索结果推广卡（Booking.com / 携程 等 "Ad" 标签）：识别 isAd / adType /
-//      Algo:"Ads" / moduleType 含 ad|promo / source 为广告网络 等标记并剔除
-//   6. 调试模式：URL 带 ?__debug=1 时，在 Loon 日志打印完整响应结构，便于定位新广告字段
+//   4. 文章详情页 viewsfullpage：删除 river / riverdb / inarticle / interstitialgallery 等广告区
+//   5. AppConfig：清空 intraArticleNativeAd / interstitialNativeAds 等广告位配置
+//      （否则客户端仍会画 Ad 占位框，即便 srtb 竞价已被拦截）
+//   6. Rewards：独立保守剥离——只清 promotions / *_Partner，绝不触碰 balance/catalog/orders
+//   7. 调试模式：URL 带 ?__debug=1 时，在 Loon 日志打印完整响应结构
 // 说明：本脚本对静态资源(图片/JS/CSS)直接放行，只处理 HTML / JSON。
 // 自证明：所有处理的响应都会带 X-Loon-AdBlock 响应头，便于抓包验证。
-// v10 变更（2026-08-31 HAR 校准）：
-//   - 国区文章/信息流走 assets.msn.cn（此前只匹配 .com，导致 nativead 整段漏剥）
-//   - 覆盖 /service/MSN/Feed（首页 Feed/me 里的 webcontent / 一点资讯植入）
-//   - JSON：label/adLabel/badge 等字段值为 Ad/广告/推广/Sponsored 时整卡删除
-//   - HTML：正文仅为 Ad/广告/Sponsored 的小标签也按角标处理，回溯删外层 card
-//   - 额外删除 region:"riverdb"
-// v9 变更：
-//   - 文章详情页：直接删除整个 region:"river" 区块（对应 UI 里的"为你精选更多内容"），
-//     不再逐张删里面的 nativead/slideshow 卡，避免 Booking.com 等 Ad 卡残留。
+// v11 变更（2026-08-31 HAR #289 校准）：
+//   - 根因：feed 里 nativead/river 已删，但 AppConfig 仍下发文内/插页广告位，
+//     客户端照样渲染 "Ad" 区域（srtb 被拦后变成空广告框）。
+//   - 新增 stripAppConfigAds：针对性清空广告位配置键，不再对 config 跑激进 isAdObject。
+//   - 新增 stripRewardsAds：奖励接口走保守路径，保证积分/兑换/订单可用。
+//   - 额外删除 region: inarticle / interstitialgallery / rectangle / sliver。
+// v10 变更：国区 assets.msn.cn + MSN/Feed + Ad 角标识别。
 // ============================================================
 
 (function () {
@@ -47,29 +45,46 @@
   const isHTML = /text\/html/i.test(ct);
 
   // 文章 / 信息流接口（assets.msn.com / 国区 assets.msn.cn；含 MSN/Feed 首页流）
-  // 需额外剔除 recoDoc / webcontent 推广卡
   const isNewsFeed =
     /assets\.msn\.(com|cn)\/service\/news\/feed\//i.test(url) ||
     /assets\.msn\.(com|cn)\/service\/MSN\/Feed/i.test(url);
 
-  // 文章详情页（pageId=sapphireviews = 国区 Bing 文章页）—— cards 列表里 nativead 与 article 交错
+  // 文章详情页（pageId=sapphireviews = 国区 Bing 文章页）
   const isArticleDetail =
     /assets\.msn\.(com|cn)\/service\/news\/feed\/pages\/viewsfullpage/i.test(url);
 
   // 搜索结果页（bing.com / cn.bing.com 的 search / sapphire 接口）
   const isSearch = /bing\.com/i.test(url) && /(search|sapphire|api\/v1|results|query)/i.test(url);
 
-  // Bing 奖励平台响应：只剔 promotions / limitedTimeOffer / *_Partner 推广卡，保留积分与任务数据
+  // Bing 奖励平台：必须走保守剥离，保留积分/任务/兑换
   const isRewards = /rewardsplatform\.microsoft\.com/i.test(url);
 
+  // AppConfig（决定客户端是否创建文内 Ad 占位）
+  const isAppConfig =
+    /\/resolver\/api\/resolve\//i.test(url) ||
+    /expType=AppConfig/i.test(url);
+
   let removed = 0;
+  let mode = '';
   try {
     if (isHTML) {
       body = stripHtmlAds(body);
+      mode = 'html';
+    } else if (isRewards) {
+      const r = stripRewardsAds(body);
+      body = r.body;
+      removed = r.removed;
+      mode = 'rewards';
+    } else if (isAppConfig) {
+      const r = stripAppConfigAds(body);
+      body = r.body;
+      removed = r.removed;
+      mode = 'config';
     } else {
       const r = stripJsonAds(body, isNewsFeed, isSearch);
       body = r.body;
       removed = r.removed;
+      mode = 'json';
     }
   } catch (e) {
     console.log('[Bing去广告] 解析异常: ' + (e && e.message ? e.message : e));
@@ -78,28 +93,29 @@
   if (isDebug) {
     console.log('[Bing去广告][DEBUG] url=' + url);
     console.log('[Bing去广告][DEBUG] content-type=' + ct);
+    console.log('[Bing去广告][DEBUG] mode=' + mode);
     console.log('[Bing去广告][DEBUG] body(前2000)=' + String(body).slice(0, 2000));
   }
 
-  // 自证明响应头：只要本脚本真的跑过这条响应，就会带上 X-Loon-AdBlock。
-  // 下次抓包只要看到这个头，就能确认插件已生效；removed=0 说明本响应无广告。
+  // 自证明响应头
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    ';v=10' +
+    ';v=11' +
+    (mode ? ';mode=' + mode : '') +
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
     (isSearch ? ';search=1' : '') +
     (isRewards ? ';rewards=1' : '') +
+    (isAppConfig ? ';config=1' : '') +
     (isHTML ? ';html=1' : '');
 
-  // 每条命中响应都打一行 Loon 日志（含 host），便于确认脚本真在跑、哪个接口还有广告
   try {
     const m = url.match(/^https?:\/\/([^\/]+)/i);
     const host = m ? m[1] : '?';
-    console.log('[Bing去广告] v10 OK host=' + host + ' removed=' +
+    console.log('[Bing去广告] v11 OK host=' + host + ' mode=' + mode + ' removed=' +
       (typeof removed !== 'undefined' ? removed : 0) +
-      (isRewards ? ' [奖励]' : '') + ' url=' + url.slice(0, 100));
+      (isRewards ? ' [奖励保守]' : '') + ' url=' + url.slice(0, 100));
   } catch (e) {}
 
   $done({ headers: outHeaders, body: body });
@@ -115,6 +131,171 @@ function getHeader(headers, name) {
     if (k.toLowerCase() === lname) return headers[k];
   }
   return undefined;
+}
+
+// ------------------------------------------------------------
+// Rewards：保守剥离（保证 Bing Rewards 可用）
+// 只做两件事：
+//   1) 清空 promotions 数组（品牌推广横幅）
+//   2) 删除 name 匹配 *_Partner / limitedTimeOffer / AppInstall_*Partner 的条目
+// 明确不碰：balance / counters / catalog / orders / profile / goal_item / activities
+// ------------------------------------------------------------
+function stripRewardsAds(text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    return { body: text, removed: 0 };
+  }
+
+  let removed = 0;
+
+  function isPartnerPromo(o) {
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return false;
+    const name = typeof o.name === 'string' ? o.name : '';
+    // 真机抓包：Bing_Sapphire_AppInstall_*_Partner / *limitedTimeOffer*
+    if (/_partner$|partner_|limitedtimeoffer|appinstall/i.test(name)) return true;
+    // 带 brandId 的限时推广横幅对象（非兑换订单；订单在 orders[] 且通常无此类 name）
+    if (o.limitedTimeOffer || o.limitedTimeOfferBanner || o.bannerImpressionOffer) return true;
+    return false;
+  }
+
+  function clean(node) {
+    if (Array.isArray(node)) {
+      for (let i = node.length - 1; i >= 0; i--) {
+        const item = node[i];
+        if (isPartnerPromo(item)) {
+          node.splice(i, 1);
+          removed++;
+        } else {
+          clean(item);
+        }
+      }
+    } else if (node && typeof node === 'object') {
+      // 整组清空 promotions
+      if (Array.isArray(node.promotions)) {
+        removed += node.promotions.length;
+        node.promotions = [];
+      }
+      for (const k in node) {
+        // 绝不删除 balance / catalog / orders 等关键字段本身
+        if (/^(balance|counters|catalog|orders|profile|goal_item|activities|globalCounters)$/i.test(k)) {
+          // 仍递归清理其内部可能嵌套的 partner 推广，但不删除字段
+          clean(node[k]);
+          continue;
+        }
+        const v = node[k];
+        if (v && typeof v === 'object') {
+          if (!Array.isArray(v) && isPartnerPromo(v)) {
+            delete node[k];
+            removed++;
+          } else {
+            clean(v);
+          }
+        }
+      }
+    }
+  }
+
+  clean(data);
+  console.log('[Bing去广告][奖励] 已移除推广条目数=' + removed + '（积分/兑换数据保留）');
+  return { body: JSON.stringify(data), removed: removed };
+}
+
+// ------------------------------------------------------------
+// AppConfig：清空广告位配置，阻止客户端创建 "Ad" 占位区域
+// 2026-08-31 HAR：srtb 已被拦，但 config 仍下发：
+//   slots.intraArticleNativeAd / interstitialNativeAds / nativeAdLoadingRules
+// 客户端据此画出带 Ad 角标的空框。
+// ------------------------------------------------------------
+function stripAppConfigAds(text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    return { body: text, removed: 0 };
+  }
+
+  let removed = 0;
+
+  // 这些键对应广告位 / 原生广告加载规则，整组清空或置 null
+  const CLEAR_ARRAY_KEYS = /^(interstitialNativeAds|nativeAdLoadingRules|riverVideoAdsProperties)$/i;
+  const NULL_OBJECT_KEYS = /^(intraArticleNativeAd|bannerAd|nativeAd|nativeAdConfig|nativeAdWC|nativeAdConfigs|adServiceConfig|displayAds|displayAd)$/i;
+
+  function isNativeAdRef(obj) {
+    if (!obj || typeof obj !== 'object') return false;
+    const exp = String(
+      obj.experienceType ||
+      (obj.configRef && obj.configRef.experienceType) ||
+      ''
+    );
+    return /ViewsNativeAd|NativeAdWC|NativeAd|BannerAd|DisplayAds/i.test(exp);
+  }
+
+  function clean(node) {
+    if (Array.isArray(node)) {
+      for (let i = node.length - 1; i >= 0; i--) {
+        const item = node[i];
+        if (isNativeAdRef(item)) {
+          node.splice(i, 1);
+          removed++;
+          continue;
+        }
+        clean(item);
+      }
+    } else if (node && typeof node === 'object') {
+      // configs 顶层：直接干掉 ViewsNativeAd / NativeAdWC / DisplayAdsWC 整棵配置树
+      if (node.configs && typeof node.configs === 'object') {
+        for (const ck in node.configs) {
+          if (/ViewsNativeAd|NativeAdWC|DisplayAdsWC/i.test(ck)) {
+            delete node.configs[ck];
+            removed++;
+          }
+        }
+      }
+
+      for (const k in node) {
+        if (CLEAR_ARRAY_KEYS.test(k) && Array.isArray(node[k])) {
+          if (node[k].length) {
+            removed += node[k].length;
+            node[k] = [];
+          }
+          continue;
+        }
+        if (NULL_OBJECT_KEYS.test(k) && node[k] != null) {
+          node[k] = null;
+          removed++;
+          continue;
+        }
+        // slots / childExperienceReferencesWC 内的广告位引用
+        if ((k === 'slots' || k === 'childExperienceReferencesWC' || k === 'nativeAdConfigs') &&
+            node[k] && typeof node[k] === 'object') {
+          const bag = node[k];
+          for (const sk in bag) {
+            if (NULL_OBJECT_KEYS.test(sk) || /nativead|bannerad|displayad/i.test(sk)) {
+              if (bag[sk] != null) {
+                bag[sk] = null;
+                removed++;
+              }
+            } else if (isNativeAdRef(bag[sk])) {
+              bag[sk] = null;
+              removed++;
+            }
+          }
+        }
+        if (isNativeAdRef(node[k])) {
+          node[k] = null;
+          removed++;
+          continue;
+        }
+        clean(node[k]);
+      }
+    }
+  }
+
+  clean(data);
+  console.log('[Bing去广告][Config] 已清空广告位数=' + removed);
+  return { body: JSON.stringify(data), removed: removed };
 }
 
 // ------------------------------------------------------------
@@ -288,9 +469,12 @@ function stripJsonAds(text, isNewsFeed, isSearch) {
     return r;
   }
 
-  // 先整段删除 "river" / "riverdb" 区块，再递归清理剩余广告对象
-  removed += removeSectionsByRegion(data, 'river');
-  removed += removeSectionsByRegion(data, 'riverdb');
+  // 先整段删除广告相关 region，再递归清理剩余广告对象
+  // river/riverdb = "为你精选更多内容"；inarticle/interstitialgallery/rectangle/sliver = 文内/插页广告位
+  const AD_REGIONS = ['river', 'riverdb', 'inarticle', 'interstitialgallery', 'rectangle', 'sliver'];
+  for (let i = 0; i < AD_REGIONS.length; i++) {
+    removed += removeSectionsByRegion(data, AD_REGIONS[i]);
+  }
 
   function isAdObject(o) {
     if (!o || typeof o !== 'object') return false;
