@@ -1,5 +1,5 @@
 // ============================================================
-// Bing 去广告脚本 (Loon http-response)  v13
+// Bing 去广告脚本 (Loon http-response)  v14
 // 适用：Microsoft Bing App / Bing 页面
 // 架构：本插件「纯 JS、零 Rule」—— 网络层广告域名由 bing_block_request.js
 //       (http-request) 拦截；本脚本只负责「剔除混在合法响应里的内联广告」：
@@ -15,6 +15,8 @@
 //   7. 调试模式：URL 带 ?__debug=1 时，在 Loon 日志打印完整响应结构
 // 说明：本脚本对静态资源(图片/JS/CSS)直接放行，只处理 HTML / JSON。
 // 自证明：所有处理的响应都会带 X-Loon-AdBlock 响应头，便于抓包验证。
+// v14 变更（2026-09-04）：
+//   - 完全放行 rewards.bing.com（勿当搜索页剥 HTML，否则 Rewards 无法浏览）。
 // v13 变更（2026-09-01 HAR #292）：
 //   - Rewards 不可用根因：请求脚本匹配全部 https://，并发下 Script evaluate timeout，
 //     登录/bingapiauth/odc 认证失败，rewardsplatform 请求根本发不出去。
@@ -25,6 +27,12 @@
 (function () {
   const url = $request.url || '';
   const reqHeaders = $request.headers || {};
+
+  // Rewards 站点：一律原样放行（.plugin 已排除；此处再兜底）
+  if (/^https?:\/\/([^\/]*\.)?rewards\.bing\.com([\/:?]|$)/i.test(url)) {
+    $done({});
+    return;
+  }
 
   const isDebug =
     /[?&]__debug=1/.test(url) ||
@@ -51,8 +59,11 @@
   const isArticleDetail =
     /assets\.msn\.(com|cn)\/service\/news\/feed\/pages\/viewsfullpage/i.test(url);
 
-  // 搜索结果页（bing.com / cn.bing.com 的 search / sapphire 接口）
-  const isSearch = /bing\.com/i.test(url) && /(search|sapphire|api\/v1|results|query)/i.test(url);
+  // 搜索结果页（bing.com / cn.bing.com 的 search / sapphire 接口；不含 rewards.bing.com）
+  const isSearch =
+    /bing\.com/i.test(url) &&
+    !/rewards\.bing\.com/i.test(url) &&
+    /(search|sapphire|api\/v1|results|query)/i.test(url);
 
   // Bing 奖励平台：必须走保守剥离，保留积分/任务/兑换
   const isRewards = /rewardsplatform\.microsoft\.com/i.test(url);
@@ -99,7 +110,7 @@
   const outHeaders = {};
   for (const k in respHeaders) outHeaders[k] = respHeaders[k];
   outHeaders['X-Loon-AdBlock'] = 'removed=' + (typeof removed !== 'undefined' ? removed : 0) +
-    ';v=13' +
+    ';v=14' +
     (mode ? ';mode=' + mode : '') +
     (isNewsFeed ? ';feed=1' : '') +
     (isArticleDetail ? ';articleDetail=1' : '') +
@@ -111,7 +122,7 @@
   try {
     const m = url.match(/^https?:\/\/([^\/]+)/i);
     const host = m ? m[1] : '?';
-    console.log('[Bing去广告] v13 OK host=' + host + ' mode=' + mode + ' removed=' +
+    console.log('[Bing去广告] v14 OK host=' + host + ' mode=' + mode + ' removed=' +
       (typeof removed !== 'undefined' ? removed : 0) +
       (isRewards ? ' [奖励保守]' : '') + ' url=' + url.slice(0, 100));
   } catch (e) {}

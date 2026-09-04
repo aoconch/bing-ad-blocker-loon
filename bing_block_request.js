@@ -13,7 +13,7 @@
   if (m) host = m[1].toLowerCase();
 
   // 保险：登录 / Rewards / Office 联邦认证域一律放行（即使误触发也不拦）
-  if (/(^|\.)(login\.microsoftonline\.com|odc\.officeapps\.live\.com|rewardsplatform\.microsoft\.com|bingapiauth\.sapphire\.microsoftapp\.net|login\.live\.com|account\.microsoft\.com)$/i.test(host)) {
+  if (/(^|\.)(login\.microsoftonline\.com|odc\.officeapps\.live\.com|rewardsplatform\.microsoft\.com|rewards\.bing\.com|bingapiauth\.sapphire\.microsoftapp\.net|login\.live\.com|account\.microsoft\.com)$/i.test(host)) {
     $done({});
     return;
   }

@@ -1,28 +1,29 @@
 #!name = Bing 广告屏蔽
-#!desc = 屏蔽 Microsoft Bing App 广告（v13：请求脚本仅匹配广告域，避免登录/Rewards 超时；Rewards 保守保留）
+#!desc = 屏蔽 Microsoft Bing App 广告（v14：排除 rewards.bing.com，避免 Rewards 页面被剥离/MitM）
 #!author = WorkBuddy
 #!homepage = https://github.com/aoconch/bing-ad-blocker-loon
 #!tag = 去广告, Bing
 #!type = normal
 
 # ============================================================
-# 设计说明（v13 · 纯 JS、零 Rule）
+# 设计说明（v14 · 纯 JS、零 Rule）
 # ------------------------------------------------------------
 # ① bing_block_request.js —— http-request：只匹配广告/竞价/追踪域名
 #    【重要】绝不能用 /^https?:\/\// 匹配全部请求！
-#    HAR #292：全量匹配导致 Script evaluate timeout，登录/认证失败，
-#    Rewards 接口根本发不出去。
-# ② bing_remove_ads.js —— http-response：剥内联广告；Rewards 走保守路径。
-# v13：收窄请求脚本 URL Guard，恢复 Bing 登录与 Rewards。
+# ② bing_remove_ads.js —— http-response：剥内联广告。
+# v14：排除 rewards.bing.com（MitM -hostname + 响应脚本不匹配），
+#      避免 Rewards Web 页被 stripHtmlAds 搞挂。
+# v13：收窄请求脚本 URL Guard，恢复登录与 Rewards API。
 # ============================================================
 
 # ============================================================
 # [Mitm] 需要解密 HTTPS 的域名
 # 注意：不要 MitM login.microsoftonline.com / odc.officeapps.live.com /
 #       bingapiauth.* —— 这些是登录认证，MitM+脚本容易搞挂 Rewards。
+#       -rewards.bing.com：从 *.bing.com 中排除 Rewards 浏览页。
 # ============================================================
 [Mitm]
-hostname = bing.com, *.bing.com, *.msn.com, *.msn.cn, msn.cn, assets.msn.com, assets.msn.cn, www.msn.com, www.msn.cn, srtb.msn.com, srtb.msn.cn, ads.msn.com, *.msads.net, msads.net, bingads.microsoft.com, prod.rewardsplatform.microsoft.com, booking.com, *.booking.com, bstatic.com, *.bstatic.com, ctrip.com, *.ctrip.com, trip.com, *.trip.com, doubleclick.net, *.doubleclick.net, googlesyndication.com, *.googlesyndication.com, googleadservices.com, *.googleadservices.com, adservice.google.com, adnxs.com, *.adnxs.com, rubiconproject.com, *.rubiconproject.com, pubmatic.com, *.pubmatic.com, criteo.com, *.criteo.com, criteo.net, *.criteo.net, moatads.com, *.moatads.com, spotx.tv, *.spotx.tv, openx.net, *.openx.net, scorecardresearch.com, *.scorecardresearch.com, taboola.com, *.taboola.com, outbrain.com, *.outbrain.com, adform.net, *.adform.net, adroll.com, *.adroll.com, advertising.com, *.advertising.com, adtechus.com, *.adtechus.com, adsrvr.org, *.adsrvr.org, bounceexchange.com, *.bounceexchange.com, rfihub.com, *.rfihub.com, crwdcntrl.net, *.crwdcntrl.net, adsystem.com, *.adsystem.com, adservice.com, *.adservice.com, analytics.adjust.io, *.analytics.adjust.io, analytics.adjust.com, *.analytics.adjust.com, self.events.data.microsoft.com, gateway.bingviz.microsoftapp.net, firebase-settings.crashlytics.com, firebaselogging-pa.googleapis.com, yidianzixun.com, *.yidianzixun.com, go2yd.com, doris.yidianzixun.com
+hostname = bing.com, *.bing.com, -rewards.bing.com, *.msn.com, *.msn.cn, msn.cn, assets.msn.com, assets.msn.cn, www.msn.com, www.msn.cn, srtb.msn.com, srtb.msn.cn, ads.msn.com, *.msads.net, msads.net, bingads.microsoft.com, prod.rewardsplatform.microsoft.com, booking.com, *.booking.com, bstatic.com, *.bstatic.com, ctrip.com, *.ctrip.com, trip.com, *.trip.com, doubleclick.net, *.doubleclick.net, googlesyndication.com, *.googlesyndication.com, googleadservices.com, *.googleadservices.com, adservice.google.com, adnxs.com, *.adnxs.com, rubiconproject.com, *.rubiconproject.com, pubmatic.com, *.pubmatic.com, criteo.com, *.criteo.com, criteo.net, *.criteo.net, moatads.com, *.moatads.com, spotx.tv, *.spotx.tv, openx.net, *.openx.net, scorecardresearch.com, *.scorecardresearch.com, taboola.com, *.taboola.com, outbrain.com, *.outbrain.com, adform.net, *.adform.net, adroll.com, *.adroll.com, advertising.com, *.advertising.com, adtechus.com, *.adtechus.com, adsrvr.org, *.adsrvr.org, bounceexchange.com, *.bounceexchange.com, rfihub.com, *.rfihub.com, crwdcntrl.net, *.crwdcntrl.net, adsystem.com, *.adsystem.com, adservice.com, *.adservice.com, analytics.adjust.io, *.analytics.adjust.io, analytics.adjust.com, *.analytics.adjust.com, self.events.data.microsoft.com, gateway.bingviz.microsoftapp.net, firebase-settings.crashlytics.com, firebaselogging-pa.googleapis.com, yidianzixun.com, *.yidianzixun.com, go2yd.com, doris.yidianzixun.com
 
 # ============================================================
 # [Script]  v2 语法（Loon 3.5.1 983+）
@@ -36,7 +37,8 @@ request if ${url} ~= /^https?:\/\/([^\/]*\.)?(srtb\.msn\.(com|cn)|msads\.net|ads
 request if ${url} ~= /^https?:\/\/([^\/]*\.)?msn\.(com|cn)\/.*?(ads-utils|libs_ads|DisplayAds|nativead|ad-plugin|xandr)/i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_block_request.js") with tag="Bing去广告(广告JS)", timeout=5
 
 # ② 响应阶段：剔除首页信息流 / 搜索结果 / 文章页里内联的广告
-response if ${url} ~= /^https?:\/\/([a-z0-9-]+\.)*bing\.com\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(搜索)", timeout=20, requires_body=true
+#    明确排除 rewards.bing.com（Rewards 站点，勿当搜索页处理）
+response if ${url} ~= /^https?:\/\/(?!rewards\.bing\.com(?:[:\/?]|$))([a-z0-9-]+\.)*bing\.com\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(搜索)", timeout=20, requires_body=true
 
 response if ${url} ~= /^https?:\/\/assets\.msn\.(com|cn)\/service\/(news|graph|MSN)\//i then script("https://raw.githubusercontent.com/aoconch/bing-ad-blocker-loon/main/bing_remove_ads.js") with tag="Bing去广告(信息流)", timeout=20, requires_body=true
 

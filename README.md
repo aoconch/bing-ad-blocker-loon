@@ -4,7 +4,8 @@
 
 **v8 起改为「纯 JS、零 Rule」**：不再依赖 Loon 的 `[Rule]` 域名拦截，所有去广告逻辑都在两个 JS 脚本里完成。
 
-**v13**：请求脚本**只匹配广告域**（禁止全量 `https://`），避免登录/认证 Script timeout 导致 Rewards 不可用；Rewards 仍仅响应阶段保守剥离。
+**v14**：排除 `rewards.bing.com`（MitM 负名单 + 响应脚本不匹配），避免 Rewards 页面被当搜索页剥 HTML。
+**v13**：请求脚本**只匹配广告域**（禁止全量 `https://`），避免登录/认证 Script timeout。
 
 ## 原理（两个脚本各司其职）
 
@@ -41,20 +42,21 @@ Loon 操作：配置 → 插件 → `+` → 通过 URL 添加 → 粘贴上面�
 
 安装后：Loon → 工具 → MitM 开启（主机名已含 `assets.msn.com` / `assets.msn.cn` 及各大广告/追踪域）→ 安装并信任证书 → 打开 Bing App。
 **不要**对 `login.microsoftonline.com` / `odc.officeapps.live.com` / `bingapiauth.*` 做 MitM。
+**`rewards.bing.com` 已从 MitM / 响应脚本排除**，Rewards 站点流量原样放行。
 
 ## 手动部署到自己的仓库
 
 1. 把本仓库推到 GitHub（任意公开仓库）。
 2. 编辑 `Bing-AD-Blocker.plugin`，把脚本 `script("https://raw.githubusercontent.com/...")` 换成你自己的地址。
-3. Loon 通过 URL 添加：`https://cdn.jsdelivr.net/gh/<你>/<仓库>@f7e0ca5/Bing-AD-Blocker.plugin`
+3. Loon 通过 URL 添加：`https://cdn.jsdelivr.net/gh/<你>/<仓库>@COMMIT/Bing-AD-Blocker.plugin`
 4. 同上开启 MitM 并信任证书。
 
-> **Bing 奖励默认保留**：请求阶段完全不碰登录/Rewards；`prod.rewardsplatform.microsoft.com` 仅在响应阶段由 `bing_remove_ads.js` 剔 `promotions` / `limitedTimeOffer` / `*_Partner`，积分与日常任务原样保留。
+> **Bing 奖励默认保留**：`rewards.bing.com` 完全不碰；请求阶段不碰登录域；`prod.rewardsplatform.microsoft.com` 仅在响应阶段剔 `promotions` / `limitedTimeOffer` / `*_Partner`，积分与日常任务原样保留。
 
 ## 怎么确认插件真的生效了
 
 - **请求拦截**：被拦的广告/追踪请求，抓包会看到来自 Loon 的 `200` 空响应，且带响应头 `X-Loon-AdBlock-Req: blocked=1`；Loon 日志出现 `[Bing去广告-请求] block=<host>`。
-- **内联剥离**：脚本会给每条被处理的响应打上响应头 **`X-Loon-AdBlock: removed=N;v=13`**（N=本响应移除的广告条目数）。
+- **内联剥离**：脚本会给每条被处理的响应打上响应头 **`X-Loon-AdBlock: removed=N;v=14`**（N=本响应移除的广告条目数）。
   - 下次抓包 / 看 Loon 日志，只要出现这个头，就说明插件脚本确实跑起来了；
   - `removed=0` 表示这条响应本就没有广告。
   - 国区文章页应能看到 `assets.msn.cn` 的响应也带 `X-Loon-AdBlock`。
@@ -66,6 +68,12 @@ Loon 操作：配置 → 插件 → `+` → 通过 URL 添加 → 粘贴上面�
 
 ## 故障排查
 
+### 症状：rewards.bing.com 无法正常浏览
+
+旧版把 `*.bing.com` 的 MitM / 搜索响应脚本也罩到了 Rewards 站点，HTML 被 `stripHtmlAds` 误剥。
+
+**处理**：装 v14+；确认 MitM 含 `-rewards.bing.com`，且对 `rewards.bing.com` 无 `X-Loon-AdBlock` 头。
+
 ### 症状：Bing Rewards / 登录不可用（HAR 无 rewardsplatform 流量）
 
 根因多为旧版把请求脚本匹配成了全部 `https://`，Loon 日志出现：
@@ -74,20 +82,20 @@ Loon 操作：配置 → 插件 → `+` → 通过 URL 添加 → 粘贴上面�
 
 随之 `login.microsoftonline.com` / `bingapiauth` / `odc.officeapps.live.com` 失败（status 0），Rewards 根本起不来。
 
-**处理**：删除旧插件，用 v13 的 commit 固定 URL 重装；确认请求脚本**不会**再打在登录域上。
+**处理**：删除旧插件，用最新 commit 固定 URL 重装；确认请求脚本**不会**再打在登录域上。
 
 ### 症状：插件显示"已加载"但仍然有广告
 
-99% 是 **Loon 缓存了旧 plugin** 或 **CDN 缓存了旧脚本**。表现：`X-Loon-AdBlock` 头里不是 `v=13`。
+99% 是 **Loon 缓存了旧 plugin** 或 **CDN 缓存了旧脚本**。表现：`X-Loon-AdBlock` 头里不是 `v=14`。
 
 #### A. 强制刷新插件（推荐）
 
 Loon 的插件缓存与 URL 一一对应。换一个新的 URL（新的 commit 哈希）即可让 Loon 当作新插件重拉。
 
-#### B. 自查 v13 标志
+#### B. 自查 v14 标志
 
-新版响应头应包含 `X-Loon-AdBlock: ...;v=13`；
-新版 Loon 日志应包含 `[Bing去广告] v13 OK host=... removed=N`。
+新版响应头应包含 `X-Loon-AdBlock: ...;v=14`；
+新版 Loon 日志应包含 `[Bing去广告] v14 OK host=... removed=N`。
 
 如果响应头是旧版本号或无版本号 → 插件是旧版，重新做 A。
 
